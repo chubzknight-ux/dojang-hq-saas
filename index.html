@@ -16,11 +16,8 @@ const BL_ID=[["Putih",mk("#FFFFFF")],["Kuning",mk("#F2C200")],["Kuning strip",mk
 const BL_EN=[["White",mk("#FFFFFF")],["Yellow",mk("#F2C200")],["Yellow stripe",mk("#F2C200","#2E9E5B",1)],["Green",mk("#2E9E5B")],["Green stripe",mk("#2E9E5B","#2457C5",1)],["Blue",mk("#2457C5")],["Blue stripe",mk("#2457C5","#C8102E",1)],["Red",mk("#C8102E")],["Red stripe 1",mk("#C8102E","#111111",1)],["Red stripe 2",mk("#C8102E","#111111",2)],["Black",mk("#111111")]];
 const getBL=()=>isEN()?BL_EN:BL_ID;
 const SK=["Poomsae","Kyorugi","Kekuatan","Kelenturan","Disiplin"],RP=500000;
-const DAN_RANKS=["DAN 1 Kukkiwon","DAN 2 Kukkiwon","DAN 3 Kukkiwon","DAN 4 Kukkiwon","DAN 5 Kukkiwon","DAN 6 Kukkiwon","DAN 7 Kukkiwon","Sabuk Hitam (Poom)","Asisten Pelatih"];
-const skLabel=k=>isEN()?({Poomsae:"Poomsae",Kyorugi:"Kyorugi",Kekuatan:"Strength",Kelenturan:"Flexibility",Disiplin:"Discipline",Mengajar:"Teaching",Teknik:"Technique",Komunikasi:"Communication",Ketepatan:"Punctuality"}[k]||k):k;
+const skLabel=k=>isEN()?({Poomsae:"Poomsae",Kyorugi:"Kyorugi",Kekuatan:"Strength",Kelenturan:"Flexibility",Disiplin:"Discipline"}[k]||k):k;
 const genderLabel=g=>isEN()?({"Laki-laki":"Male","Perempuan":"Female"}[g]||g):g;
-const getBeltCats=()=>[["all",T("Semua","All"),"#888"],["putih",T("Putih","White"),"#FFFFFF"],["kuning",T("Kuning","Yellow"),"#F2C200"],["hijau",T("Hijau","Green"),"#2E9E5B"],["biru",T("Biru","Blue"),"#2457C5"],["merah",T("Merah","Red"),"#C8102E"],["hitam",T("Hitam","Black"),"#111111"]];
-const matchBeltCat=(bi,cat)=>{if(cat==="all")return true;if(cat==="putih")return bi===0;if(cat==="kuning")return bi===1||bi===2;if(cat==="hijau")return bi===3||bi===4;if(cat==="biru")return bi===5||bi===6;if(cat==="merah")return bi===7||bi===8||bi===9;if(cat==="hitam")return bi===10;return true;};
 const esc=s=>String(s??"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ymd=()=>new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
 const hm=()=>new Date().toTimeString().slice(0,5);
@@ -155,7 +152,7 @@ if(portalId){
     }
     __club=body.club||{id:"default",name:"Dojang HQ",headCoach:"Kepala Pelatih",logo:""};
     __cache=body.data||{};
-    if(cur==="sa")cur="dash";
+    if(cur==="sa"||cur==="upd")cur="dash";
     ST=T("Tersambung ke database ","Connected to ")+__club.name;
     buildNav();
     __subs.forEach(f=>f());
@@ -198,9 +195,8 @@ if(portalId){
   const unitJ=()=>curUnit==="all"?J:J.filter(c=>(c.unit||"Utama")===curUnit);
   const unitLabel=()=>curUnit==="all"?T("Semua Unit Dojang","All Dojang Units"):"Unit "+curUnit;
   const familyKey=s=>{const w=wan(s.wa);if(w.length>=9)return"wa:"+w;const o=String(s._ortu||"").trim().toLowerCase().replace(/[^a-z0-9]/g,"");if(o.length>=3)return"ortu:"+o;return"id:"+s.id};
-  const getSiblings=(s,pool=S)=>{const fk=familyKey(s);if(fk.startsWith("id:"))return[];return pool.filter(x=>x.id!==s.id&&!x.cuti&&familyKey(x)===fk)};
-  let cur="dash",selId="",ed=null,cf=null,cfCls=null,cfLulus=null,cfAtt=null,ad=ymd(),ym=ymd().slice(0,7);
-  let coachName=localStorage.getItem("dojang_coach")||"",evSaveStatus="",evTimer=null,fSearch="",fBelt="all";
+  let cur="dash",selId="",ed=null,cf=null,cfLulus=null,ad=ymd(),ym=ymd().slice(0,7);
+  let coachName=localStorage.getItem("dojang_coach")||"";
   let ST="",db=null,A=[],P=[],Lz=[],J=[],E=[],CList=[];
 
   function sync(docs){__rawStudents=docs;const BL=getBL();S.length=0;docs.forEach(d=>{const s={...d,_n:d.n,_ortu:d.ortu||"",gender:d.gender||"",_note:d.note||T("Belum ada catatan.","No notes yet."),unit:d.unit||"Utama",fee:(d.fee!==undefined&&d.fee!==null&&d.fee!=="")?Number(d.fee):null,cuti:!!d.cuti,cutiKet:d.cutiKet||"",cutiTgl:d.cutiTgl||""};const rawBi=d.v==2?(d.bi||0):([0,1,3,5,7,10][d.bi||0]??0);s.bi=Math.max(0,Math.min(10,Number(rawBi)||0));s.n=esc(d.n);s.ortu=esc(d.ortu||"");s.note=esc(d.note||T("Belum ada catatan.","No notes yet."));s.b=isEN()?(BL[s.bi][0]+" belt"):("Sabuk "+BL[s.bi][0].toLowerCase());s.c=BL[s.bi][1];s.nx=s.bi<10?BL[s.bi+1][0].toLowerCase():"dan";s.sk=s.sk||{};SK.forEach(k=>s.sk[k]=s.sk[k]??50);s.pct=s.pct||0;S.push(s)});S.sort((a,b)=>a._n.localeCompare(b._n,"id"));}
@@ -211,6 +207,7 @@ if(portalId){
 
   const V={
     sa(){
+      if(__role!=="superadmin"||__club)return V.dash();
       const today=ymd();
       const totActiveClubs=__saClubs.filter(c=>c.status!=="suspended"&&(!c.expiresAt||c.expiresAt>=today)).length;
       const totStudents=Object.values(__saCounts).reduce((a,b)=>a+b,0);
@@ -240,7 +237,7 @@ if(portalId){
       return need()+hero+`<div class="kpis"><div class="kpi"><strong>${n}</strong>${T("Murid aktif","Active students")}${cutiN?` (+${cutiN} ${T("cuti","on leave")})`:""}</div><div class="kpi"><strong>${w.length?w[w.length-1]+"%":"–"}</strong>${T("Hadir latihan terakhir","Last session attendance")}</div><div class="kpi"><strong>${n-paid}</strong>${T("Iuran","Tuition")} ${ym} ${T("belum lunas","unpaid")}</div><div class="kpi"><strong>${rd.length}</strong>${T("Siap diuji sabuk","Ready for belt test")}</div></div><div class="sec"><h2>${T("Sebaran sabuk","Belt distribution")}</h2><div class="belt">${dd.map(x=>`<i style="width:${x[1]/n*100}%;background:${x[2]}"></i>`).join("")}</div><div class="legend">${dd.map(x=>`<span><span class="dot" style="background:${x[2]}"></span>${x[0]} ${x[1]}</span>`).join("")}</div></div><div class="grid"><div class="sec"><h2>${T("Kehadiran latihan terakhir","Recent session attendance")}</h2>${w.length?`<div class="bars" style="padding-top:20px">${w.map(v=>`<div style="height:${Math.max(v,3)}%"><span>${v}</span></div>`).join("")}</div><div class="xl">${as.map(x=>`<span>${x.id.slice(5)}</span>`).join("")}</div>`:`<p class="mu">${T("Belum ada absensi.","No attendance yet.")}</p>`}</div><div class="sec"><h2>${T("Siap diuji naik sabuk","Ready for belt promotion")}</h2>${rd.length?rd.map(s=>`<div class="row"><span><span class="dot" style="background:${s.c}"></span>${s.n}<br><span class="mu">${s.b} → ${s.nx}</span></span><button class="btn ghost" data-lid="${s.id}">${T("Lihat laporan","View report")}</button></div>`).join(""):`<p class="mu">${T("Belum ada.","None yet.")}</p>`}</div></div>`;
     },
     mur(){
-      const BL=getBL(),f=ed,uAll=unitS(),act=activeS(),cuti=uAll.filter(s=>s.cuti),units=getUnits();
+      const BL=getBL(),f=ed,uAll=unitS(),act=activeS(),units=getUnits();
       const defU=f?(f.unit||units[0]):(curUnit==="all"?units[0]:curUnit);
       const unitDL=`<datalist id="unitList">${units.map(u=>`<option value="${esc(u)}">`).join("")}</datalist>`;
       const form=f?`<div class="sec"><h2>${f.id?T("Ubah data murid","Edit student"):T("Murid baru","New student")}</h2>${unitDL}<div class="f"><div><label>${T("Nama Murid","Student Name")}</label><input id="fn" type="text" value="${esc(f._n||"")}"></div><div><label>${T("Gender","Gender")}</label><select id="fgender"><option value="">–</option><option value="Laki-laki" ${f.gender==="Laki-laki"?"selected":""}>${T("Laki-laki","Male")}</option><option value="Perempuan" ${f.gender==="Perempuan"?"selected":""}>${T("Perempuan","Female")}</option></select></div><div><label>${T("Nama Orang Tua / Wali","Parent / Guardian Name")}</label><input id="fortu" type="text" value="${esc(f._ortu||"")}"></div><div><label>${T("Unit Dojang","Dojang Unit")}</label><input id="fu" type="text" list="unitList" value="${esc(defU)}"></div><div><label>${T("Usia","Age")}</label><input id="fa" type="number" min="4" value="${f.a||""}"></div><div><label>${T("Sabuk","Belt")}</label><select id="fb">${BL.map((b,i)=>`<option value="${i}" ${(f.bi||0)==i?"selected":""}>${b[0]}</option>`).join("")}</select></div><div><label>${T("WhatsApp orang tua","Parent's WhatsApp")}</label><input id="fw" type="tel" value="${esc(f.wa||"")}"></div><div><label>${T("Tarif Iuran Khusus (Rp)","Custom Tuition (Rp)")}</label><input id="ffee" type="number" min="0" step="10000" value="${(f&&hasCustomFee(f))?Number(f.fee):""}"></div></div><div style="margin-top:12px"><label>${T("Catatan pelatih","Coach's note")}</label><textarea id="fo" rows="2">${esc(f._note==T("Belum ada catatan.","No notes yet.")?"":(f._note||""))}</textarea></div><label class="tg" style="margin-top:10px"><input type="checkbox" id="fc" ${f.cuti?"checked":""}> <b>${T("Sedang Cuti","On Leave")}</b></label><p><button class="btn" data-a="save">${T("Simpan","Save")}</button> <button class="btn ghost" data-a="cancel">${T("Batal","Cancel")}</button></p></div>`:"";
@@ -255,7 +252,6 @@ if(portalId){
       const act=activeS(),cName=coachName||headCoachName();
       const existing=E.find(x=>(x.date||x.id.slice(0,10))===ad&&slug(x.coach||"")===slug(cName));
       const ev=(existing&&existing.ev)||{};
-      const coachUrl=location.origin+"/?pelatih=1&club="+encodeURIComponent((__club&&__club.id)||"");
       return need()+`<div class="note" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px"><span><b>${T("Link Portal Khusus Pelatih:","Coach Portal Link:")}</b> ${T("Bagikan ke asisten pelatih dojang ini.","Share with assistant coaches of this dojang.")}</span><button class="btn" data-a="copyCoachPortal">${T("Salin Link Portal Pelatih","Copy Coach Portal Link")}</button></div><div class="top"><h1>${T("Penilaian","Evaluations")}</h1><div style="display:flex;gap:12px"><div><label>${T("Tanggal","Date")}</label><input id="ad" type="date" value="${ad}"></div><div><label>${T("Pelatih","Coach")}</label><input id="coachInp" type="text" value="${esc(cName)}"></div></div></div>`+(act.length?`<div class="sec">${act.map(s=>{const x=ev[s.id]||{};return `<div class="row" style="flex-wrap:wrap"><span style="flex:1 1 200px"><span class="dot" style="background:${s.c}"></span><b>${s.n}</b></span><span class="ev">${[["t",T("Teknik","Technique")],["k",T("Sikap","Attitude")],["f",T("Fisik","Physical")]].map(([k,l])=>`<label>${l}<select data-ev="${s.id}" data-k="${k}"><option value="">–</option>${[1,2,3,4,5].map(n=>`<option ${x[k]==n?"selected":""}>${n}</option>`).join("")}</select></label>`).join("")}</span><input data-en="${s.id}" type="text" placeholder="${T("Catatan...","Note...")}" value="${esc(x.n||"")}" style="flex:1 1 100%;margin-top:6px"></div>`;}).join("")}<p style="margin-top:14px"><button class="btn" data-a="evsave">${T("Simpan Penilaian","Save Evaluation")}</button></p></div>`:emp());
     },
     iur(){
@@ -283,6 +279,7 @@ if(portalId){
       return need()+`<div class="top"><h1>${T("Data & Cadangan","Data & Backup")}</h1></div><div class="sec"><h2>${T("Ekspor / Impor JSON Dojang","Export / Import Dojang JSON")}</h2><p class="mu">${T("Cadangan data khusus untuk ","Data backup exclusively for ")}<b>${esc(clubName())}</b>.</p><div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center"><button class="btn" data-a="exp">${T("Unduh Cadangan (.json)","Download Backup (.json)")}</button><input type="file" id="impf" accept=".json"></div></div>`;
     },
     upd(){
+      if(__role!=="superadmin"||__club)return V.dash();
       return `${langBarHtml()}<div class="top"><div><h1>🚀 ${T("Update Aplikasi SaaS (Terpusat)","Centralized SaaS App Update")}</h1><span class="mu">${T("Sekali update ke main, seluruh dojang klien otomatis mendapat versi terbaru.","Once updated to main, all client dojangs automatically receive the latest version.")}</span></div></div><div class="sec"><div class="f" style="margin-bottom:10px"><div><label>GitHub Personal Access Token</label><input id="ghTok" type="password" placeholder="github_pat_..." value="${esc(localStorage.getItem("dojang_gh_tok")||"")}"></div><div><label>${T("Judul Commit (opsional)","Commit Title (optional)")}</label><input id="ghTitle" type="text"></div></div><label>${T("Tempel Kode HTML Update","Paste Update HTML Code")}</label><textarea id="ghPkg" rows="8" placeholder="<!DOCTYPE html>..."></textarea><div id="ghRes" style="margin-top:10px"></div><p style="margin-top:12px"><button class="btn" data-a="ghRun" data-mode="direct">🚀 ${T("Update Langsung ke Main (Semua Klien)","Update Directly to Main (All Clients)")}</button></p></div>`;
     }
   };
@@ -294,7 +291,6 @@ if(portalId){
     }else{
       const lu=clubLogo();
       const NV=[["dash","🥋 "+T("Dashboard","Dashboard")],["mur","👥 "+T("Murid","Students")],["abs","✅ "+T("Absensi","Attendance")],["pen","📝 "+T("Penilaian","Evaluations")],["iur","💳 "+T("Iuran","Tuition")],["uji","🥇 "+T("Ujian sabuk","Belt Test")],["lap","📊 "+T("Laporan murid","Student Report")],["jad","📅 "+T("Jadwal & Unit","Schedule & Units")],["dat","💾 "+T("Data","Data & Backup")]];
-      if(__role==="superadmin")NV.push(["upd","🚀 "+T("Update App","Update App")]);
       navEl.innerHTML=`<div class="brand"><div class="brand-wrap">${lu?`<img class="brand-logo" src="${lu}" alt="${esc(clubName())}">`:""}<div>Dojang HQ<small>${esc(clubName())}</small></div></div></div>`+`<div class="unit-sw"><label>${T("Pilih Unit","Select Unit")}</label><select id="unitSel"></select></div>`+NV.map(x=>`<button data-v="${x[0]}">${x[1]}</button>`).join("")+`<button id="logoutBtn" style="margin-top:auto;opacity:.8">🔒 ${T("Keluar","Sign Out")}</button>`;
       const uSel=document.getElementById("unitSel");
       if(uSel)uSel.onchange=e=>{curUnit=e.target.value;draw();};
@@ -318,7 +314,7 @@ if(portalId){
       if(curUnit!=="all"&&!units.includes(curUnit))curUnit="all";
       uSel.innerHTML=`<option value="all" ${curUnit==="all"?"selected":""}>🌐 ${T("Semua Unit","All Units")} (${units.length})</option>`+units.map(u=>`<option value="${esc(u)}" ${curUnit===u?"selected":""}>🥋 ${esc(u)}</option>`).join("");
     }
-    if(!V[cur])cur="dash";
+    if(cur==="sa"||cur==="upd"||!V[cur])cur="dash";
     $("#app").innerHTML=V[cur]();
     document.querySelectorAll("nav button[data-v]").forEach(b=>b.setAttribute("aria-current",b.dataset.v===cur));
   }
@@ -389,6 +385,7 @@ if(portalId){
     }
 
     if(a==="ghRun"){
+      if(__role!=="superadmin"||__club)return;
       const tok=document.getElementById("ghTok").value.trim();
       const raw=document.getElementById("ghPkg").value.trim();
       const title=(document.getElementById("ghTitle")?.value||"").trim()||("Update Dojang HQ SaaS ("+ymd()+")");
