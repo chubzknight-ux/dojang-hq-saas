@@ -7,7 +7,21 @@ export const J = (d, s = 200) =>
 export const cleanSlug = s =>
   String(s || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "");
 
+// ===== Index database =====
+// Hampir semua query mencari "semua dokumen milik klub X" lewat json_extract(data,'$.clubId').
+// Tanpa index, D1 membaca SELURUH tabel (semua klub) di setiap sinkron — makin banyak klub, makin lambat & mahal.
+// Index ekspresi ini dibuat otomatis sekali per instance worker (IF NOT EXISTS = tanpa biaya bila sudah ada).
+let schemaReady = false;
+export async function ensureSchema(env) {
+  if (schemaReady || !env.DB) return;
+  schemaReady = true;
+  try {
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS docs_club_coll ON docs(json_extract(data,'$.clubId'), coll)").run();
+  } catch (e) { schemaReady = false; /* jangan ganggu permintaan bila gagal; dicoba lagi lain kali */ }
+}
+
 export async function authenticate(env, req) {
+  await ensureSchema(env);
   const user = String(req.headers.get("X-Dojang-User") || "").trim().toLowerCase();
   const pin = String(req.headers.get("X-Dojang-Pin") || "").trim();
   const targetClub = cleanSlug(req.headers.get("X-Target-Club") || "");
@@ -109,11 +123,19 @@ export async function delDoc(env, clubId, coll, id) {
   if (sid !== id) await env.DB.prepare("DELETE FROM docs WHERE coll=? AND id=? AND json_extract(data,'$.clubId')=?").bind(coll, id, clubId).run();
 }
 // Ambil semua dokumen satu koleksi (atau beberapa) milik klub, id sudah dibersihkan, versi berawalan menang atas versi lama
+// colls = null → semua koleksi klub kecuali yang PROTECTED (satu query saja)
 export async function clubRows(env, clubId, colls) {
-  const ph = colls.map(() => "?").join(",");
-  const rs = await env.DB.prepare(`SELECT coll,id,data FROM docs WHERE coll IN (${ph}) AND json_extract(data,'$.clubId')=?`).bind(...colls, clubId).all();
+  await ensureSchema(env);
+  let rs;
+  if (colls) {
+    const ph = colls.map(() => "?").join(",");
+    rs = await env.DB.prepare(`SELECT coll,id,data FROM docs WHERE json_extract(data,'$.clubId')=? AND coll IN (${ph})`).bind(clubId, ...colls).all();
+  } else {
+    rs = await env.DB.prepare("SELECT coll,id,data FROM docs WHERE json_extract(data,'$.clubId')=?").bind(clubId).all();
+  }
   const map = new Map();
   for (const r of rs.results) {
+    if (!colls && PROTECTED.has(r.coll)) continue;
     let d; try { d = JSON.parse(r.data); } catch (e) { continue; }
     const id = logicalId(r.coll, r.id), k = r.coll + "\u0000" + id, pre = String(r.id).includes("@") && NS.has(r.coll);
     if (!map.has(k) || pre) map.set(k, { coll: r.coll, id, d });

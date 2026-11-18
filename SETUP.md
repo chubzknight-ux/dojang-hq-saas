@@ -39,5 +39,7 @@ Setelah mengubah variabel, deploy ulang.
 - Untuk pengamanan Super Admin yang lebih kuat, pasang Cloudflare Access (Zero Trust → Access → Applications → Self-hosted, domain aplikasi, policy Allow untuk email Anda, login One-time PIN). Gratis sampai 50 pengguna.
 
 ## Catatan
-- Data tersimpan di D1, sinkron antar HP, dan diperbarui otomatis tiap beberapa detik.
+- Data tersimpan di D1, sinkron antar HP, dan diperbarui otomatis (lebih jarang saat aplikasi tidak dipakai, berhenti saat tab tertutup).
+- Bila data tidak berubah, server hanya membalas "tidak ada perubahan" (HTTP 304), jadi sinkron berkala hampir tidak memakai kuota data HP.
+- Index database `docs_club_coll` dibuat otomatis saat API pertama kali dipakai (juga ada di `schema.sql`). Index ini membuat pencarian data per klub tidak lagi membaca seluruh tabel semua klub, sehingga hemat kuota baca D1 dan tetap cepat walau klien bertambah.
 - Klub yang masa aktifnya habis atau ditangguhkan tidak bisa dipakai (portal menampilkan pesan).

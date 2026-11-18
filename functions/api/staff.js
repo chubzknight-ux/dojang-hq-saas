@@ -3,7 +3,7 @@
 // Super Admin juga bisa, lewat header X-Target-Club.
 // Semua data pelatih tersimpan di tabel "docs", koleksi "staff", dengan id "<klub>__<username>".
 
-import { authenticate, cleanSlug, getDoc, putDoc, clubRows } from "./_auth.js";
+import { authenticate, cleanSlug, getDoc, putDoc, clubRows, ensureSchema } from "./_auth.js";
 
 const J = (d, s = 200) => new Response(JSON.stringify(d), {
   status: s,
@@ -202,6 +202,7 @@ export async function userFromToken(request, env) {
   const t = request.headers.get("X-Dojang-Token") || "";
   const i = t.indexOf(".");
   if (i < 1 || !secretOf(env)) return null;
+  await ensureSchema(env);
   try {
     const payload = t.slice(0, i);
     const ok = await crypto.subtle.verify("HMAC", await hmacKey(env), fromB64u(t.slice(i + 1)), enc.encode(payload));
