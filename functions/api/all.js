@@ -1,14 +1,13 @@
-import { J, authenticate } from "./_auth.js";
+import { J, authenticate, clubRows, PROTECTED } from "./_auth.js";
 
 export async function onRequestGet({ env, request }) {
   const auth = await authenticate(env, request);
   if (!auth.ok) return J({ error: auth.error }, auth.status);
 
-  const rs = await env.DB.prepare("SELECT coll, id, data FROM docs").all();
-
   if (auth.role === "superadmin" && !auth.clubId) {
     const clubs = [];
     const counts = {};
+    const rs = await env.DB.prepare("SELECT coll, id, data FROM docs WHERE coll IN ('clubs','students')").all();
     for (const r of rs.results) {
       const d = JSON.parse(r.data);
       if (r.coll === "clubs") {
@@ -21,12 +20,12 @@ export async function onRequestGet({ env, request }) {
     return J({ role: "superadmin", clubs, counts });
   }
 
+  const colls = ["students", "attendance", "payments", "evaluations", "units", "classes", "coaches", "settings"];
   const out = {};
-  for (const r of rs.results) {
-    if (r.coll === "clubs") continue;
-    const d = JSON.parse(r.data);
-    if (d.clubId !== auth.clubId) continue;
-    (out[r.coll] = out[r.coll] || []).push({ id: r.id, ...d });
+  const rs2 = await env.DB.prepare("SELECT DISTINCT coll FROM docs WHERE json_extract(data,'$.clubId')=?").bind(auth.clubId).all();
+  for (const r of rs2.results) if (!PROTECTED.has(r.coll) && !colls.includes(r.coll)) colls.push(r.coll);
+  for (const { coll, id, d } of await clubRows(env, auth.clubId, colls)) {
+    (out[coll] = out[coll] || []).push({ id, ...d });
   }
 
   return J({
