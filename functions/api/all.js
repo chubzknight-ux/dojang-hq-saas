@@ -1,4 +1,4 @@
-import { J, authenticate, clubRows } from "./_auth.js";
+import { J, authenticate, clubRows, stripSecrets } from "./_auth.js";
 import { jsonEtag } from "./staff.js";
 
 // GET /api/all — sinkron data admin klub / Super Admin.
@@ -13,7 +13,7 @@ export async function onRequestGet({ env, request }) {
     const counts = {};
     const rs = await env.DB.prepare("SELECT id, data FROM docs WHERE coll='clubs'").all();
     for (const r of rs.results) {
-      try { clubs.push({ id: r.id, ...JSON.parse(r.data) }); } catch (e) { /* lewati data rusak */ }
+      try { clubs.push({ id: r.id, ...stripSecrets(JSON.parse(r.data)) }); } catch (e) { /* lewati data rusak */ }
     }
     // hanya ambil dua field yang dibutuhkan, bukan seluruh isi data murid semua klub
     const st = await env.DB.prepare(

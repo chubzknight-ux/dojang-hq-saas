@@ -48,7 +48,11 @@ export async function onRequestGet({ env, request }) {
           d.ev = ev;
         }
         evaluations.push({ id, ...d });
-      } else if (isCoachEval(id, d)) evaluations.push({ id, ...d });
+      } else if (isCoachEval(id, d)) {
+        // Publik: ulasan orang tua ditampilkan tanpa nama orang tua / murid (anonim)
+        const { parentName, studentName, ...anon } = d;
+        evaluations.push({ id, ...anon });
+      }
     } else if (coll === "classes") {
       if (!scope || scope.units.has(uk(d.unit || DEF_UNIT))) classes.push({ id, unit: d.unit || DEF_UNIT, ...d });
     } else if (coll === "coaches") coaches.push({ id, ...d });

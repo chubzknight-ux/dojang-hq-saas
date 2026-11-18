@@ -546,7 +546,7 @@ if(portalId){
       const r=await fetch("/api/staff",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"login",club:cl,username:u,password:p})});
       const d=await r.json().catch(()=>({}));
       if(!r.ok||!d.token){cLoginErr=d.error||T("Nama pengguna atau kata sandi salah.","Wrong username or password.");renderCoachLogin();return;}
-      CLUB_ID=cl;localStorage.setItem("dojang_club",cl);localStorage.setItem("dojang_token",d.token);localStorage.removeItem("dojang_pin");cLoginErr="";if(d.mustChange){location.href="/";return;}loadCoachData();
+      CLUB_ID=cl;localStorage.setItem("dojang_club",cl);localStorage.setItem("dojang_token",d.token);localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_atok");cLoginErr="";if(d.mustChange){location.href="/";return;}loadCoachData();
     }catch(e){cLoginErr=T("Gagal menghubungi server","Failed to reach server");renderCoachLogin();}
   }
   document.addEventListener("click",e=>{if(e.target.closest("#cLoginBtn"))cDoLogin();});
@@ -575,15 +575,24 @@ if(portalId){
 } else {
   let __pin=localStorage.getItem("dojang_pin")||"";
   let __tok=localStorage.getItem("dojang_token")||"";
+  let __atok=localStorage.getItem("dojang_atok")||"";
   let __user=localStorage.getItem("dojang_user")||"";
   let __targetClub=localStorage.getItem("dojang_target_club")||"";
   let __role="",__club=null,__saClubs=[],__saCounts={};
   let edClub=null,pendingClubLogo="",cfDelClub=null;
-  const __hdr=(extra={})=>({"X-Dojang-User":__user,"X-Dojang-Pin":__pin,...(__targetClub?{"X-Target-Club":__targetClub}:{}),...extra});
+  const __hdr=(extra={})=>({...(__atok?{"X-Dojang-Admin-Token":__atok}:{"X-Dojang-User":__user,"X-Dojang-Pin":__pin}),...(__targetClub?{"X-Target-Club":__targetClub}:{}),...extra});
+  // Tukar username+PIN dengan token. Setelah itu PIN tidak disimpan di perangkat dan tidak dikirim lagi.
+  async function __adminLogin(){
+    const u=__user,p=__pin;__pin="";localStorage.removeItem("dojang_pin");
+    let r,d={};
+    try{r=await fetch("/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({user:u,pin:p})});d=await r.json().catch(()=>({}));}catch(e){throw e}
+    if(!r.ok||!d.token){gateErr=d.error||T("Gagal masuk.","Sign-in failed.");showPin(true);return false}
+    __atok=d.token;localStorage.setItem("dojang_atok",d.token);window.__etagA="";return true;
+  }
   let __cache={},__subs=[],__rawStudents=[];
   const __rid=()=>Math.random().toString(36).slice(2,12);
   const __snap=n=>{const rows=Array.isArray(__cache[n])?__cache[n]:[];return{docs:rows.map(r=>({id:r.id,data:()=>{const{id,...d}=r;return d}})),size:rows.length,empty:!rows.length}};
-  if(params.has("daftar")){__pin="";__user="";__tok="";__targetClub="";ROLE="owner";}
+  if(params.has("daftar")){__pin="";__user="";__tok="";__atok="";__targetClub="";ROLE="owner";}
   let gateMode=ROLE==="pelatih"?"coach":(params.has("daftar")?"register":(localStorage.getItem("dojang_gate")||"admin"));
   function syncPinTexts(){
     const co=gateMode==="coach",rg=gateMode==="register",ad=!co&&!rg,g=id=>document.getElementById(id);
@@ -612,14 +621,15 @@ if(portalId){
       if(!r.ok)throw new Error(r.status);
       const d=await r.json();window.__etag=r.headers.get("ETag")||"";hidePin();gateErr="";if(d.club){__club=d.club;setClubCtx(d.club);}WHO=(d.user&&d.user.name)||"";PERM=Object.assign({},(d.user&&d.user.perm)||{},{units:(d.user&&d.user.units)||[]});window.__mustPw=!!(d.user&&d.user.mustChange);__cache=d;
     }else{
-      if(!__user||!__pin){showPin(false);return;}
+      if(!__atok&&(!__user||!__pin)){showPin(false);return;}
+      if(!__atok&&!(await __adminLogin()))return;
       const hA=__hdr();if(window.__etagA)hA["If-None-Match"]=window.__etagA;
       const r=await fetch("/api/all",{cache:"no-store",headers:hA});
       if(r.status===304)return;
       const body=await r.json().catch(()=>({}));
-      if(r.status===403||r.status===402||r.status===429){
+      if(r.status===401||r.status===403||r.status===402||r.status===429){
         window.__etagA="";
-        if(r.status===403){localStorage.removeItem("dojang_pin");__pin="";}
+        if(r.status===401||r.status===403){localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_atok");__pin="";__atok="";}
         gateErr=body.error||"";showPin(true);return;
       }
       if(!r.ok)throw new Error(r.status);
@@ -659,7 +669,7 @@ if(portalId){
       if(rr.status===401){localStorage.removeItem("dojang_token");__tok="";gateErr=T("Sesi berakhir. Silakan masuk lagi.","Session ended. Please sign in again.");showPin(true);throw new Error("unauthorized");}
       if(!rr.ok){toast(dd.error||T("Gagal menyimpan","Failed to save"));throw new Error(dd.error||rr.status);}
       await __pullQ().catch(()=>{});return;
-    }const r=await fetch("/api/docs/"+n+"/"+id,{method:m,headers:__hdr({"content-type":"application/json"}),body:body?JSON.stringify(body):undefined});if(r.status===403||r.status===402||r.status===429){const dd=await r.json().catch(()=>({}));if(/PIN|Username|percobaan|langganan|dinonaktifkan/i.test(dd.error||"")){gateErr=dd.error||"";showPin(true);}else toast(dd.error||T("Tidak diizinkan","Not allowed"));throw new Error(dd.error||"forbidden");}if(!r.ok){const dd=await r.json().catch(()=>({}));throw new Error(dd.error||r.status);}await __pullQ().catch(()=>{});}
+    }const r=await fetch("/api/docs/"+n+"/"+id,{method:m,headers:__hdr({"content-type":"application/json"}),body:body?JSON.stringify(body):undefined});if(r.status===401||r.status===403||r.status===402||r.status===429){const dd=await r.json().catch(()=>({}));if(r.status===401){localStorage.removeItem("dojang_atok");__atok="";}if(/PIN|Username|percobaan|langganan|dinonaktifkan|Sesi/i.test(dd.error||"")){gateErr=dd.error||"";showPin(true);}else toast(dd.error||T("Tidak diizinkan","Not allowed"));throw new Error(dd.error||"forbidden");}if(!r.ok){const dd=await r.json().catch(()=>({}));throw new Error(dd.error||r.status);}await __pullQ().catch(()=>{});}
   function __ref(n,id){return{id,set:d=>__send("PUT",n,id,d),update:d=>__send("PATCH",n,id,d),delete:()=>__send("DELETE",n,id),get:async()=>{const r=(__cache[n]||[]).find(x=>x.id===id);return{id,exists:!!r,data:()=>{if(!r)return undefined;const{id:_,...d}=r;return d}}}}}
   function __col(n){return{doc:id=>__ref(n,id||__rid()),add:async d=>{const r=__ref(n,__rid());await r.set(d);return r},get:async()=>{await __pullQ().catch(()=>{});return __snap(n)},onSnapshot(next){const f=()=>next(__snap(n));__subs.push(f);f();return()=>{__subs=__subs.filter(x=>x!==f)}}}}
   const __db={collection:n=>__col(n),doc:p=>{const s=p.split("/");return __ref(s[0],s[1])}};
@@ -688,7 +698,7 @@ if(portalId){
         const r=await fetch("/api/staff",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"login",club:cl,username:u,password:val})});
         const d=await r.json().catch(()=>({}));
         if(!r.ok||!d.token){gateErr=d.error||(r.status===404?T("Fitur akun pelatih belum terpasang di server (file staff.js).","Coach account feature is not installed on the server (staff.js)."):T("Kode dojang, nama pengguna, atau kata sandi salah.","Wrong dojang code, username or password."));showPin(true);return;}
-        gateErr="";CLUB_ID=cl;localStorage.setItem("dojang_club",cl);localStorage.setItem("dojang_token",d.token);localStorage.removeItem("dojang_pin");__pin="";__tok=d.token;ROLE="pelatih";window.__etag="";
+        gateErr="";CLUB_ID=cl;localStorage.setItem("dojang_club",cl);localStorage.setItem("dojang_token",d.token);localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_atok");__pin="";__atok="";__tok=d.token;ROLE="pelatih";window.__etag="";
         document.getElementById("pinInp").value="";
         __pull().catch(netErr);
       }catch(e){netErr();}
@@ -696,7 +706,7 @@ if(portalId){
     }
     if(!u||!val)return toast(T("Isi Username dan PIN terlebih dahulu","Enter Username and PIN first"));
     gateErr="";ROLE="owner";__user=u;__pin=val;__targetClub="";window.__etagA="";
-    localStorage.setItem("dojang_user",u);localStorage.setItem("dojang_pin",val);localStorage.removeItem("dojang_token");localStorage.removeItem("dojang_target_club");__tok="";
+    __atok="";localStorage.removeItem("dojang_atok");localStorage.setItem("dojang_user",u);localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_token");localStorage.removeItem("dojang_target_club");__tok="";
     __pull().catch(netErr);
   };
   document.addEventListener("click",e=>{
@@ -780,7 +790,7 @@ if(portalId){
     if(__role==="superadmin"&&!__club){
       document.querySelector("nav").innerHTML=`<div class="brand"><div>Dojang HQ<small>👑 Super Admin</small></div></div><button data-v="sa">🏢 ${T("Kelola Dojang Klien","Client Dojangs")}</button><button data-v="upd">🚀 ${T("Update App (Semua Klien)","Update App (All Clients)")}</button><button id="logoutBtn" style="margin-top:auto;opacity:.8">🔒 ${T("Keluar","Sign Out")}</button>`;
       const mb=document.getElementById("mbar");if(mb)mb.innerHTML=`<button type="button" data-v="sa"><span aria-hidden="true">🏢</span><small>${T("Klien","Clients")}</small></button><button type="button" data-v="upd"><span aria-hidden="true">🚀</span><small>Update</small></button><button type="button" id="mMore" aria-controls="mainNav"><span aria-hidden="true">☰</span><small>${T("Lainnya","More")}</small></button>`;
-      document.getElementById("logoutBtn").onclick=()=>{localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_token");localStorage.removeItem("dojang_target_club");__pin="";__tok="";__targetClub="";location.reload()};
+      document.getElementById("logoutBtn").onclick=()=>{localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_atok");localStorage.removeItem("dojang_token");localStorage.removeItem("dojang_target_club");__pin="";__atok="";__tok="";__targetClub="";location.reload()};
       FT.length=0;
       return;
     }
@@ -789,7 +799,7 @@ if(portalId){
     document.querySelector("nav").innerHTML=`<div class="brand"><div class="brand-wrap"><img id="navLogoImg" class="brand-logo" src="${lu}" style="${lu?"":"display:none"}" alt="${CNE()}"><div>Dojang HQ<small>${CNE()}</small></div></div></div>`+`<div class="unit-sw"><label>${T("Pilih Unit Dojang","Select Dojang Unit")}</label><select id="unitSel" aria-label="${T("Pilih Unit Dojang","Select Dojang Unit")}"></select></div>`+NV.filter(x=>ROLE==="owner"||STAFF_VIEWS.includes(x[0])).map(x=>`<button data-v="${x[0]}">${x[1]}</button>`).join("")+(ROLE==="owner"?"":`<div style="padding:10px 14px;font-size:12.5px;color:#cfd6ff;opacity:.85">👤 ${esc(WHO)} · ${T("Pelatih","Coach")}</div><button id="pwBtn" style="opacity:.75">🔑 ${T("Ganti kata sandi","Change password")}</button>`)+`<button id="logoutBtn" style="margin-top:auto;opacity:.75">🔒 ${T("Kunci / Keluar","Lock / Sign Out")}</button>`;
     document.getElementById("unitSel").onchange=e=>{curUnit=e.target.value;localStorage.setItem("dojang_unit",curUnit);selId="";draw()};
     {const mb=document.getElementById("mbar");if(mb){const MB=[["dash","🥋",T("Dashboard","Dashboard")],["abs","✅",T("Absensi","Attendance")],["pen","📝",T("Penilaian","Evaluate")],["mur","👥",T("Murid","Students")]];mb.innerHTML=MB.map(x=>`<button type="button" data-v="${x[0]}" aria-label="${x[2]}"><span aria-hidden="true">${x[1]}</span><small>${x[2]}</small></button>`).join("")+`<button type="button" id="mMore" aria-expanded="${document.body.classList.contains("msheet")}" aria-controls="mainNav"><span aria-hidden="true">☰</span><small>${T("Lainnya","More")}</small></button>`;}}
-    document.getElementById("logoutBtn").onclick=()=>{localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_token");localStorage.removeItem("dojang_target_club");__pin="";__tok="";__targetClub="";location.reload()};
+    document.getElementById("logoutBtn").onclick=()=>{localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_atok");localStorage.removeItem("dojang_token");localStorage.removeItem("dojang_target_club");__pin="";__atok="";__tok="";__targetClub="";location.reload()};
     FT.length=0;
     FT.push([T("Belum dibuat di versi ini","Not yet built in this version"),[[T("Posting ke Instagram sungguhan","Direct Instagram publishing"),T("Butuh akun Instagram Professional dan aplikasi Meta (Graph API). Tab Konten masih contoh tampilan.","Requires an Instagram Professional account and Meta Graph API app. The Content tab is currently a preview.")],[T("Formulir pendaftaran publik","Public registration form"),T("Halaman terpisah di landing page agar orang tua mendaftar sendiri. Sementara, catat calon murid di menu Murid.","A standalone landing page form for parents to self-register. For now, record leads in the Students menu.")],[T("Pembayaran QRIS otomatis","Automated QRIS payments"),T("Butuh penyedia pembayaran.","Requires a payment gateway provider.")],[T("Kejuaraan dan stok perlengkapan","Tournaments and gear inventory"),T("Bisa ditambah setelah fitur inti dipakai rutin.","Can be added once core workflows are used regularly.")]]]);
   }
@@ -801,14 +811,14 @@ V.sa=function(){
       const totStudents=Object.values(__saCounts).reduce((a,b)=>a+b,0);
       const f=edClub;
       const prevLogo=pendingClubLogo||(f&&f.logo)||"";
-      const formHtml=f?`<div class="sec" style="border-top:4px solid #F2B600"><h2>${f.isEdit?T("Ubah Data Dojang Klien: ","Edit Client Dojang: ")+esc(f.name):T("Tambah Dojang Klien Baru","Add New Client Dojang")}</h2><div class="f"><div><label>${T("Nama Dojang / Klub","Dojang / Club Name")}</label><input id="sc_name" type="text" placeholder="Contoh: Garuda Taekwondo Club" value="${esc(f.name||"")}"></div><div><label>${T("ID Unik (Slug)","Unique Slug ID")}</label><input id="sc_id" type="text" placeholder="garuda" value="${esc(f.id||"")}" ${f.isEdit?"readonly":""}></div><div><label>${T("Username Login Admin","Admin Login Username")}</label><input id="sc_user" type="text" placeholder="garuda" value="${esc(f.adminUser||"")}"></div><div><label>${T("PIN Login Admin","Admin Login PIN")}</label><input id="sc_pin" type="text" placeholder="123456" value="${esc(f.adminPin||"")}"></div><div><label>${T("Nama Kepala Pelatih","Head Coach Name")}</label><input id="sc_hc" type="text" placeholder="Sabeum Budi" value="${esc(f.headCoach||"")}"></div><div><label>${T("WhatsApp Pemilik Dojang","Owner WhatsApp")}</label><input id="sc_wa" type="tel" placeholder="0812..." value="${esc(f.ownerWa||"")}"></div><div><label>${T("Paket Langganan","Subscription Plan")}</label><select id="sc_plan"><option value="Basic" ${(f.plan||"Basic")==="Basic"?"selected":""}>Basic (Maks 60 murid)</option><option value="Pro" ${f.plan==="Pro"?"selected":""}>Pro (Unlimited murid & multi-unit)</option></select></div><div><label>${T("Masa Aktif Sampai (Tanggal)","Expires At (Date)")}</label><input id="sc_exp" type="date" value="${esc(f.expiresAt||addDays(today,30))}"></div><div><label>${T("Status Akun","Account Status")}</label><select id="sc_status"><option value="active" ${(f.status||"active")==="active"?"selected":""}>Aktif</option><option value="suspended" ${f.status==="suspended"?"selected":""}>Suspended (Nonaktif)</option></select></div></div><div style="margin-top:14px"><label>${T("Logo Dojang Klien (PNG / JPG - opsional)","Client Dojang Logo (PNG / JPG - optional)")}</label><input id="scLogoInp" type="file" accept="image/*">${prevLogo?`<div style="margin-top:8px;display:flex;align-items:center;gap:12px"><img src="${prevLogo}" style="width:58px;height:58px;border-radius:50%;object-fit:contain;border:1px solid var(--ln);background:#fff;padding:3px"><button type="button" class="btn ghost dn" style="padding:5px 10px;font-size:12px" data-a="clearClubLogo">${T("Hapus Logo","Remove Logo")}</button></div>`:""}</div><p style="margin-top:16px"><button class="btn" data-a="saveClub">💾 ${T("Simpan Dojang Klien","Save Client Dojang")}</button> <button class="btn ghost" data-a="cancelClub">${T("Batal","Cancel")}</button></p></div>`:"";
+      const formHtml=f?`<div class="sec" style="border-top:4px solid #F2B600"><h2>${f.isEdit?T("Ubah Data Dojang Klien: ","Edit Client Dojang: ")+esc(f.name):T("Tambah Dojang Klien Baru","Add New Client Dojang")}</h2><div class="f"><div><label>${T("Nama Dojang / Klub","Dojang / Club Name")}</label><input id="sc_name" type="text" placeholder="Contoh: Garuda Taekwondo Club" value="${esc(f.name||"")}"></div><div><label>${T("ID Unik (Slug)","Unique Slug ID")}</label><input id="sc_id" type="text" placeholder="garuda" value="${esc(f.id||"")}" ${f.isEdit?"readonly":""}></div><div><label>${T("Username Login Admin","Admin Login Username")}</label><input id="sc_user" type="text" placeholder="garuda" value="${esc(f.adminUser||"")}"></div><div><label>${T("PIN Login Admin","Admin Login PIN")}</label><input id="sc_pin" type="text" autocomplete="off" placeholder="${f.isEdit?T("Kosongkan jika PIN tidak diganti","Leave blank to keep current PIN"):"123456"}" value=""></div><div><label>${T("Nama Kepala Pelatih","Head Coach Name")}</label><input id="sc_hc" type="text" placeholder="Sabeum Budi" value="${esc(f.headCoach||"")}"></div><div><label>${T("WhatsApp Pemilik Dojang","Owner WhatsApp")}</label><input id="sc_wa" type="tel" placeholder="0812..." value="${esc(f.ownerWa||"")}"></div><div><label>${T("Paket Langganan","Subscription Plan")}</label><select id="sc_plan"><option value="Basic" ${(f.plan||"Basic")==="Basic"?"selected":""}>Basic (Maks 60 murid)</option><option value="Pro" ${f.plan==="Pro"?"selected":""}>Pro (Unlimited murid & multi-unit)</option></select></div><div><label>${T("Masa Aktif Sampai (Tanggal)","Expires At (Date)")}</label><input id="sc_exp" type="date" value="${esc(f.expiresAt||addDays(today,30))}"></div><div><label>${T("Status Akun","Account Status")}</label><select id="sc_status"><option value="active" ${(f.status||"active")==="active"?"selected":""}>Aktif</option><option value="suspended" ${f.status==="suspended"?"selected":""}>Suspended (Nonaktif)</option></select></div></div><div style="margin-top:14px"><label>${T("Logo Dojang Klien (PNG / JPG - opsional)","Client Dojang Logo (PNG / JPG - optional)")}</label><input id="scLogoInp" type="file" accept="image/*">${prevLogo?`<div style="margin-top:8px;display:flex;align-items:center;gap:12px"><img src="${prevLogo}" style="width:58px;height:58px;border-radius:50%;object-fit:contain;border:1px solid var(--ln);background:#fff;padding:3px"><button type="button" class="btn ghost dn" style="padding:5px 10px;font-size:12px" data-a="clearClubLogo">${T("Hapus Logo","Remove Logo")}</button></div>`:""}</div><p style="margin-top:16px"><button class="btn" data-a="saveClub">💾 ${T("Simpan Dojang Klien","Save Client Dojang")}</button> <button class="btn ghost" data-a="cancelClub">${T("Batal","Cancel")}</button></p></div>`:"";
       const clubRows=__saClubs.length?__saClubs.map(c=>{
         const cnt=__saCounts[c.id]||0;
         const isExp=c.expiresAt&&c.expiresAt<today;
         const isSusp=c.status==="suspended";
         const badge=isSusp?`<span class="pill warn">Suspended</span>`:isExp?`<span class="pill warn">Expired (${esc(c.expiresAt)})</span>`:`<span class="pill ok">Aktif s/d ${esc(c.expiresAt||"∞")}</span>`;
         const waTagih=`Halo ${c.headCoach||"Sabeum"}, mengingatkan masa aktif langganan aplikasi *Dojang HQ* untuk *${c.name}* (${c.plan||"Basic"}) berakhir pada *${c.expiresAt||"-"}*. Silakan konfirmasi perpanjangan agar akses admin & portal orang tua tetap aktif. Terima kasih! 🙏`;
-        return `<div class="row" style="flex-wrap:wrap;gap:12px"><div style="display:flex;align-items:center;gap:12px;flex:1 1 280px">${c.logo?`<img src="${c.logo}" style="width:46px;height:46px;border-radius:50%;object-fit:contain;border:1px solid var(--ln);background:#fff;padding:3px">`:""}<div><b>🥋 ${esc(c.name||c.id)}</b> <span class="pill">${esc(c.plan||"Basic")}</span> ${badge}<br><span class="mu" style="font-size:13px">User: <code>${esc(c.adminUser||c.id)}</code> · PIN: <code>${esc(c.adminPin||"")}</code> · Pelatih: ${esc(c.headCoach||"-")} · <b>${cnt} murid aktif</b></span></div></div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" style="padding:7px 12px;font-size:13px" data-a="enterClub" data-id="${esc(c.id)}">🚪 ${T("Masuk ke Dojang","Open Dojang")}</button><button class="btn ghost" style="padding:7px 11px;font-size:13px" data-a="extendClub" data-id="${esc(c.id)}" data-days="30">+1 Bln</button><button class="btn ghost" style="padding:7px 11px;font-size:13px" data-a="extendClub" data-id="${esc(c.id)}" data-days="365">+1 Thn</button>${c.ownerWa?`<a class="btn ghost" style="padding:7px 11px;font-size:13px" target="_blank" rel="noopener" href="https://wa.me/${wan(c.ownerWa)}?text=${encodeURIComponent(waTagih)}">📲 Tagih WA</a>`:""}<button class="btn ghost" style="padding:7px 11px;font-size:13px" data-a="editClub" data-id="${esc(c.id)}">${T("Ubah","Edit")}</button><button class="btn ghost dn" style="padding:7px 11px;font-size:13px" data-a="delClub" data-id="${esc(c.id)}">${cfDelClub===c.id?T("Yakin hapus?","Confirm?"):T("Hapus","Delete")}</button></div></div>`;
+        return `<div class="row" style="flex-wrap:wrap;gap:12px"><div style="display:flex;align-items:center;gap:12px;flex:1 1 280px">${c.logo?`<img src="${c.logo}" style="width:46px;height:46px;border-radius:50%;object-fit:contain;border:1px solid var(--ln);background:#fff;padding:3px">`:""}<div><b>🥋 ${esc(c.name||c.id)}</b> <span class="pill">${esc(c.plan||"Basic")}</span> ${badge}<br><span class="mu" style="font-size:13px">User: <code>${esc(c.adminUser||c.id)}</code> · Pelatih: ${esc(c.headCoach||"-")} · <b>${cnt} murid aktif</b></span></div></div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" style="padding:7px 12px;font-size:13px" data-a="enterClub" data-id="${esc(c.id)}">🚪 ${T("Masuk ke Dojang","Open Dojang")}</button><button class="btn ghost" style="padding:7px 11px;font-size:13px" data-a="extendClub" data-id="${esc(c.id)}" data-days="30">+1 Bln</button><button class="btn ghost" style="padding:7px 11px;font-size:13px" data-a="extendClub" data-id="${esc(c.id)}" data-days="365">+1 Thn</button>${c.ownerWa?`<a class="btn ghost" style="padding:7px 11px;font-size:13px" target="_blank" rel="noopener" href="https://wa.me/${wan(c.ownerWa)}?text=${encodeURIComponent(waTagih)}">📲 Tagih WA</a>`:""}<button class="btn ghost" style="padding:7px 11px;font-size:13px" data-a="editClub" data-id="${esc(c.id)}">${T("Ubah","Edit")}</button><button class="btn ghost dn" style="padding:7px 11px;font-size:13px" data-a="delClub" data-id="${esc(c.id)}">${cfDelClub===c.id?T("Yakin hapus?","Confirm?"):T("Hapus","Delete")}</button></div></div>`;
       }).join(""):`<p class="mu">${T("Belum ada dojang klien terdaftar. Klik tombol + Tambah Dojang Klien di atas untuk membuat akun dojang pertama.","No client dojangs registered yet. Click + Add Client Dojang above to create your first dojang account.")}</p>`;
       return `${langBarHtml()}<div class="hero" style="background:linear-gradient(105deg,#0E1430 0 65%,#1D3FA6 65% 100%)"><div class="hl"><div><span>👑 SaaS Control Center · Dojang HQ</span><h1>Panel Super Admin</h1><p>${T("Kelola seluruh dojang klien, akun Username + PIN, masa aktif langganan & update aplikasi terpusat.","Manage all client dojangs, Username + PIN credentials, subscription expiry & centralized app updates.")}</p></div></div><div class="hr"><span>${T("Total Klien","Total Clients")}</span><b>${__saClubs.length} Dojang</b><small>${totActiveClubs} ${T("aktif","active")} · ${totStudents} ${T("total murid","total students")}</small></div></div><div class="kpis"><div class="kpi"><strong>${__saClubs.length}</strong>${T("Total Dojang Klien","Total Client Dojangs")}</div><div class="kpi"><strong>${totActiveClubs}</strong>${T("Langganan Aktif","Active Subscriptions")}</div><div class="kpi"><strong>${totStudents}</strong>${T("Total Murid Platform","Total Platform Students")}</div></div><div class="top"><h2>🏢 ${T("Daftar Dojang Klien","Client Dojangs List")}</h2><button class="btn" data-a="newClub">+ ${T("Tambah Dojang Klien","Add Client Dojang")}</button></div>${formHtml}<div class="sec">${clubRows}</div>`;
 };
@@ -1276,11 +1286,11 @@ V.upd=function(){
       const cid=slug(rawId);
       const uName=(document.getElementById("sc_user")?.value||"").trim().toLowerCase()||cid;
       const uPin=(document.getElementById("sc_pin")?.value||"").trim();
-      if(!nm||!cid||!uPin)return toast(T("Nama dojang, Slug ID, dan PIN wajib diisi","Dojang name, Slug ID, and PIN are required"));
+      if(!nm||!cid||(!uPin&&!(edClub&&edClub.isEdit)))return toast(T("Nama dojang, Slug ID, dan PIN wajib diisi","Dojang name, Slug ID, and PIN are required"));
       const payload={
         name:nm,
         adminUser:uName,
-        adminPin:uPin,
+        ...(uPin?{adminPin:uPin}:{}),
         headCoach:(document.getElementById("sc_hc")?.value||"").trim()||"Kepala Pelatih",
         ownerWa:(document.getElementById("sc_wa")?.value||"").trim(),
         plan:(document.getElementById("sc_plan")?.value||"Basic"),

@@ -17,7 +17,7 @@ Project → Settings → Bindings → Add → D1 database
 ## 4. Isi Environment variables (Settings → Variables and Secrets)
 Wajib:
 - `SUPERADMIN_PIN` — kata sandi Super Admin (pemilik platform). Pakai minimal 12 karakter, acak. Tanpa ini Super Admin tidak bisa masuk (tidak ada PIN bawaan).
-- `TOKEN_SECRET` — teks acak panjang (32+ karakter) untuk menandatangani login pelatih. Beda dengan `SUPERADMIN_PIN`.
+- `TOKEN_SECRET` — teks acak panjang (32+ karakter) untuk menandatangani login admin dan pelatih. Beda dengan `SUPERADMIN_PIN`. Tanpa ini admin tidak bisa masuk.
 
 Opsional (fitur Analisa Video AI):
 - Binding Workers AI dengan nama `AI`, atau
@@ -35,7 +35,10 @@ Setelah mengubah variabel, deploy ulang.
 
 ## Keamanan
 - Login admin dibatasi 10 percobaan gagal per 15 menit per IP.
-- Sandi pelatih disimpan ter-hash (PBKDF2). PIN admin klub masih disimpan apa adanya; gunakan PIN unik per klub.
+- Sandi pelatih dan PIN admin klub disimpan ter-hash (PBKDF2). PIN lama yang masih berupa teks otomatis di-hash saat admin klub berhasil masuk berikutnya.
+- Setelah masuk, aplikasi memakai token bertanda tangan (admin klub 7 hari, Super Admin 12 jam). PIN tidak disimpan di HP dan tidak dikirim di tiap permintaan. Mengganti PIN (atau `SUPERADMIN_PIN`) otomatis mengeluarkan sesi lama.
+- PIN tidak pernah dikirim balik ke aplikasi. Saat Super Admin mengubah data klub, kolom PIN yang dikosongkan berarti PIN tidak diganti.
+- Ulasan orang tua untuk pelatih ditampilkan secara publik tanpa nama orang tua dan murid.
 - Untuk pengamanan Super Admin yang lebih kuat, pasang Cloudflare Access (Zero Trust → Access → Applications → Self-hosted, domain aplikasi, policy Allow untuk email Anda, login One-time PIN). Gratis sampai 50 pengguna.
 
 ## Catatan
