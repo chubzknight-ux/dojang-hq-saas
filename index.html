@@ -583,6 +583,7 @@ if(portalId){
   let __cache={},__subs=[],__rawStudents=[];
   const __rid=()=>Math.random().toString(36).slice(2,12);
   const __snap=n=>{const rows=Array.isArray(__cache[n])?__cache[n]:[];return{docs:rows.map(r=>({id:r.id,data:()=>{const{id,...d}=r;return d}})),size:rows.length,empty:!rows.length}};
+  if(params.has("daftar")){__pin="";__user="";__tok="";__targetClub="";ROLE="owner";}
   let gateMode=ROLE==="pelatih"?"coach":(params.has("daftar")?"register":(localStorage.getItem("dojang_gate")||"admin"));
   function syncPinTexts(){
     const co=gateMode==="coach",rg=gateMode==="register",ad=!co&&!rg,g=id=>document.getElementById(id);
