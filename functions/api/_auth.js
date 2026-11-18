@@ -7,16 +7,108 @@ export const J = (d, s = 200) =>
 export const cleanSlug = s =>
   String(s || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "");
 
-export async function authenticate(env, req) {
-  const user = String(req.headers.get("X-Dojang-User") || "").trim().toLowerCase();
-  const pin = String(req.headers.get("X-Dojang-Pin") || "").trim();
-  const targetClub = cleanSlug(req.headers.get("X-Target-Club") || "");
+// ===== Index database =====
+// Hampir semua query mencari "semua dokumen milik klub X" lewat json_extract(data,'$.clubId').
+// Tanpa index, D1 membaca SELURUH tabel (semua klub) di setiap sinkron — makin banyak klub, makin lambat & mahal.
+// Index ekspresi ini dibuat otomatis sekali per instance worker (IF NOT EXISTS = tanpa biaya bila sudah ada).
+let schemaReady = false;
+export async function ensureSchema(env) {
+  if (schemaReady || !env.DB) return;
+  schemaReady = true;
+  try {
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS docs_club_coll ON docs(json_extract(data,'$.clubId'), coll)").run();
+  } catch (e) { schemaReady = false; /* jangan ganggu permintaan bila gagal; dicoba lagi lain kali */ }
+}
 
+// ===== PIN admin: hash + token =====
+// PIN admin klub disimpan sebagai hash PBKDF2 ("p1$salt$hash"), bukan teks asli. PIN lama (teks) otomatis di-hash saat admin berhasil masuk.
+// Setelah masuk, aplikasi memakai token bertanda tangan (X-Dojang-Admin-Token) sehingga PIN tidak disimpan di HP dan tidak dikirim di tiap permintaan.
+const enc = new TextEncoder();
+const b64 = u8 => { let s = ""; u8.forEach(b => (s += String.fromCharCode(b))); return btoa(s); };
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const b64u = u8 => b64(u8).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = s => unb64(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4));
+const eq = (a, b) => { a = String(a); b = String(b); if (a.length !== b.length) return false; let r = 0; for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i); return r === 0; };
+const ADMIN_ITER = 100000; // batas maksimum PBKDF2 di Cloudflare Workers
+const ADMIN_TOKEN_MS = { club: 7 * 864e5, superadmin: 12 * 36e5 };
+
+async function pbkdf2(pin, salt) {
+  const k = await crypto.subtle.importKey("raw", enc.encode(pin), "PBKDF2", false, ["deriveBits"]);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: ADMIN_ITER }, k, 256));
+}
+export async function hashPin(pin) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  return "p1$" + b64(salt) + "$" + b64(await pbkdf2(String(pin), salt));
+}
+async function verifyPin(stored, pin) {
+  const [v, salt, hash] = String(stored).split("$");
+  if (v !== "p1" || !salt || !hash) return false;
+  return eq(b64(await pbkdf2(String(pin), unb64(salt))), hash);
+}
+const sha10 = async s => b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(s)))).slice(0, 10);
+const hmacKey = env => crypto.subtle.importKey("raw", enc.encode(String(env.TOKEN_SECRET)), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+// Versi PIN di dalam token: bila PIN diganti, token lama otomatis tidak berlaku
+const clubPv = c => sha10("c|" + (c.adminPinHash || c.adminPin || ""));
+const saPv = env => sha10("s|" + String(env.SUPERADMIN_PIN || env.DOJANG_PIN || ""));
+
+export async function makeAdminToken(env, role, user, clubId, pv) {
+  const payload = b64u(enc.encode(JSON.stringify({ r: role, u: user, c: clubId || "", pv, ex: Date.now() + ADMIN_TOKEN_MS[role] })));
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", await hmacKey(env), enc.encode(payload)));
+  return payload + "." + b64u(sig);
+}
+// Data klub yang aman dikirim ke aplikasi: tanpa PIN / hash PIN
+export const stripSecrets = c => { if (!c) return c; const { adminPin, adminPinHash, ...rest } = c; return rest; };
+
+// Klub tidak aktif (ditangguhkan / kedaluwarsa)? Kembalikan pesan galat, atau null bila aktif.
+function clubBlocked(c) {
+  if (c.status === "suspended") return "Akun dojang sedang dinonaktifkan sementara. Hubungi penyedia sistem Dojang HQ.";
+  if (c.expiresAt) {
+    const today = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+    if (String(c.expiresAt) < today) return "Masa aktif langganan Dojang HQ telah berakhir pada " + c.expiresAt + ". Silakan perpanjang lisensi.";
+  }
+  return null;
+}
+
+async function superadminCtx(env, targetClub) {
+  let club = null;
+  if (targetClub) {
+    const row = await env.DB.prepare("SELECT id, data FROM docs WHERE coll = 'clubs' AND id = ?").bind(targetClub).first();
+    if (row) club = { id: row.id, ...JSON.parse(row.data) };
+  }
+  return { ok: true, role: "superadmin", clubId: club ? club.id : null, club: stripSecrets(club) };
+}
+
+// Masuk dengan token admin
+async function tokenAuth(env, token, targetClub) {
+  const expired = { ok: false, status: 401, error: "Sesi berakhir. Silakan masuk lagi." };
+  const i = token.indexOf(".");
+  if (i < 1 || !env.TOKEN_SECRET) return expired;
+  try {
+    const payload = token.slice(0, i);
+    if (!(await crypto.subtle.verify("HMAC", await hmacKey(env), unb64u(token.slice(i + 1)), enc.encode(payload)))) return expired;
+    const p = JSON.parse(new TextDecoder().decode(unb64u(payload)));
+    if (!p.ex || p.ex < Date.now()) return expired;
+    if (p.r === "superadmin") {
+      const saPin = String(env.SUPERADMIN_PIN || env.DOJANG_PIN || "").trim();
+      if (!saPin || p.pv !== (await saPv(env))) return expired;
+      return superadminCtx(env, targetClub);
+    }
+    const row = await env.DB.prepare("SELECT id, data FROM docs WHERE coll='clubs' AND id=?").bind(p.c).first();
+    if (!row) return expired;
+    const c = JSON.parse(row.data);
+    if (p.pv !== (await clubPv(c))) return expired;
+    const blocked = clubBlocked(c);
+    if (blocked) return { ok: false, status: 402, error: blocked };
+    return { ok: true, role: "club", clubId: row.id, club: { id: row.id, ...stripSecrets(c) } };
+  } catch (e) { return expired; }
+}
+
+// Masuk dengan username + PIN (dibatasi 10x salah / 15 menit per IP). Mengembalikan juga info untuk membuat token.
+export async function passwordAuth(env, req, user, pin, targetClub) {
   const saUser = String(env.SUPERADMIN_USER || "superadmin").trim().toLowerCase();
   // Tidak ada PIN bawaan: Super Admin baru aktif setelah SUPERADMIN_PIN diisi di Cloudflare (disarankan kalimat sandi panjang)
   const saPin = String(env.SUPERADMIN_PIN || env.DOJANG_PIN || "").trim();
 
-  // Batas percobaan salah per perangkat (IP): 10x / 15 menit
   const ip = req.headers.get("CF-Connecting-IP") || "unknown";
   const rlKey = "adm:" + ip;
   const rlRow = user && pin ? await env.DB.prepare("SELECT data FROM docs WHERE coll='staff_rl' AND id=?").bind(rlKey).first() : null;
@@ -29,15 +121,9 @@ export async function authenticate(env, req) {
     if (user && pin) await env.DB.prepare("INSERT OR REPLACE INTO docs(coll,id,data) VALUES('staff_rl',?,?)").bind(rlKey, JSON.stringify(cur)).run();
     return { ok: false, status, error };
   };
-  const eq = (a, b) => { a = String(a); b = String(b); if (a.length !== b.length) return false; let r = 0; for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i); return r === 0; };
 
   if (user && pin && saPin && user === saUser && eq(pin, saPin)) {
-    let club = null;
-    if (targetClub) {
-      const row = await env.DB.prepare("SELECT id, data FROM docs WHERE coll = 'clubs' AND id = ?").bind(targetClub).first();
-      if (row) club = { id: row.id, ...JSON.parse(row.data) };
-    }
-    return { ok: true, role: "superadmin", clubId: club ? club.id : null, club };
+    return { ...(await superadminCtx(env, targetClub)), tokenInfo: { role: "superadmin", user: saUser, clubId: "", pv: await saPv(env) } };
   }
 
   if (!user || !pin) return { ok: false, status: 403, error: "Username atau PIN kosong" };
@@ -46,24 +132,36 @@ export async function authenticate(env, req) {
     "SELECT id, data FROM docs WHERE coll = 'clubs' AND lower(trim(coalesce(nullif(json_extract(data,'$.adminUser'),''), id))) = ?"
   ).bind(user).all();
   for (const r of rs.results) {
-    const c = JSON.parse(r.data);
+    let c = JSON.parse(r.data);
     const cUser = String(c.adminUser || r.id || "").trim().toLowerCase();
-    const cPin = String(c.adminPin || "").trim();
-    if (cUser === user && cPin && eq(cPin, pin)) {
-      if (c.status === "suspended") {
-        return { ok: false, status: 402, error: "Akun dojang sedang dinonaktifkan sementara. Hubungi penyedia sistem Dojang HQ." };
-      }
-      if (c.expiresAt) {
-        const today = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
-        if (String(c.expiresAt) < today) {
-          return { ok: false, status: 402, error: "Masa aktif langganan Dojang HQ telah berakhir pada " + c.expiresAt + ". Silakan perpanjang lisensi." };
-        }
-      }
-      return { ok: true, role: "club", clubId: r.id, club: { id: r.id, ...c } };
+    if (cUser !== user) continue;
+    let good = false;
+    if (c.adminPinHash) good = await verifyPin(c.adminPinHash, pin);
+    else if (c.adminPin && eq(String(c.adminPin).trim(), pin)) {
+      good = true;
+      // PIN lama masih teks: ubah jadi hash sekarang
+      const { adminPin, ...rest } = c;
+      c = { ...rest, adminPinHash: await hashPin(pin) };
+      await env.DB.prepare("INSERT OR REPLACE INTO docs(coll,id,data) VALUES('clubs',?,?)").bind(r.id, JSON.stringify(c)).run();
     }
+    if (!good) continue;
+    const blocked = clubBlocked(c);
+    if (blocked) return { ok: false, status: 402, error: blocked };
+    return { ok: true, role: "club", clubId: r.id, club: { id: r.id, ...stripSecrets(c) }, tokenInfo: { role: "club", user: cUser, clubId: r.id, pv: await clubPv(c) } };
   }
 
   return fail(403, "Username atau PIN salah");
+}
+
+export async function authenticate(env, req) {
+  await ensureSchema(env);
+  const targetClub = cleanSlug(req.headers.get("X-Target-Club") || "");
+  const token = String(req.headers.get("X-Dojang-Admin-Token") || "").trim();
+  if (token) return tokenAuth(env, token, targetClub);
+  // Jalur lama (header username + PIN) tetap didukung supaya aplikasi versi lama yang masih tersimpan di HP tidak langsung putus
+  const user = String(req.headers.get("X-Dojang-User") || "").trim().toLowerCase();
+  const pin = String(req.headers.get("X-Dojang-Pin") || "").trim();
+  return passwordAuth(env, req, user, pin, targetClub);
 }
 
 // ===== Penyimpanan data per klub =====
@@ -109,11 +207,19 @@ export async function delDoc(env, clubId, coll, id) {
   if (sid !== id) await env.DB.prepare("DELETE FROM docs WHERE coll=? AND id=? AND json_extract(data,'$.clubId')=?").bind(coll, id, clubId).run();
 }
 // Ambil semua dokumen satu koleksi (atau beberapa) milik klub, id sudah dibersihkan, versi berawalan menang atas versi lama
+// colls = null → semua koleksi klub kecuali yang PROTECTED (satu query saja)
 export async function clubRows(env, clubId, colls) {
-  const ph = colls.map(() => "?").join(",");
-  const rs = await env.DB.prepare(`SELECT coll,id,data FROM docs WHERE coll IN (${ph}) AND json_extract(data,'$.clubId')=?`).bind(...colls, clubId).all();
+  await ensureSchema(env);
+  let rs;
+  if (colls) {
+    const ph = colls.map(() => "?").join(",");
+    rs = await env.DB.prepare(`SELECT coll,id,data FROM docs WHERE json_extract(data,'$.clubId')=? AND coll IN (${ph})`).bind(clubId, ...colls).all();
+  } else {
+    rs = await env.DB.prepare("SELECT coll,id,data FROM docs WHERE json_extract(data,'$.clubId')=?").bind(clubId).all();
+  }
   const map = new Map();
   for (const r of rs.results) {
+    if (!colls && PROTECTED.has(r.coll)) continue;
     let d; try { d = JSON.parse(r.data); } catch (e) { continue; }
     const id = logicalId(r.coll, r.id), k = r.coll + "\u0000" + id, pre = String(r.id).includes("@") && NS.has(r.coll);
     if (!map.has(k) || pre) map.set(k, { coll: r.coll, id, d });
