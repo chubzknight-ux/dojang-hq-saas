@@ -119,6 +119,16 @@ function cleanAttendance(user, id, d, scope) {
 }
 
 // ===== Pembatasan unit: akun bisa dibatasi ke unit tertentu (kosong = semua unit) =====
+export const wibToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+// Usia dari tanggal lahir (YYYY-MM-DD, tanggal WIB). Kalau kosong/tidak valid pakai angka usia lama.
+export function ageOf(lahir, fb) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(lahir || ""));
+  if (!m) return fb;
+  const t = wibToday();
+  let a = +t.slice(0, 4) - +m[1];
+  if (t.slice(5) < m[2] + "-" + m[3]) a--;
+  return a >= 0 && a < 100 ? a : fb;
+}
 const unitKey = s => String(s == null ? "" : s).trim().toLowerCase();
 export function unitScope(user, studentRows) {
   const us = (user && Array.isArray(user.units) ? user.units : []).map(unitKey).filter(Boolean);
@@ -140,11 +150,21 @@ async function auditEnsure(env) {
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT,club TEXT,t TEXT NOT NULL,who TEXT,role TEXT,action TEXT,detail TEXT)").run();
   auditReady = true;
 }
-export async function audit(env, clubId, who, role, action, detail) {
+// mergeMin: bila catatan terakhir klub ini sama persis (orang, aksi, detail) dan baru saja terjadi, cukup perbarui jamnya
+// (dipakai untuk simpan otomatis admin, supaya mengetik catatan tidak membuat puluhan baris)
+export async function audit(env, clubId, who, role, action, detail, mergeMin) {
   try {
     await auditEnsure(env);
+    const t = new Date().toISOString(), w = clip(who, 80), dj = JSON.stringify(detail || {}).slice(0, 1500);
+    if (mergeMin) {
+      const last = await env.DB.prepare("SELECT id,t,who,action,detail FROM audit_log WHERE club=? ORDER BY id DESC LIMIT 1").bind(clubId).first();
+      if (last && last.who === w && last.action === action && last.detail === dj && Date.now() - Date.parse(last.t) < mergeMin * 60000) {
+        await env.DB.prepare("UPDATE audit_log SET t=? WHERE id=?").bind(t, last.id).run();
+        return;
+      }
+    }
     await env.DB.prepare("INSERT INTO audit_log(club,t,who,role,action,detail) VALUES(?,?,?,?,?,?)")
-      .bind(clubId, new Date().toISOString(), clip(who, 80), role, action, JSON.stringify(detail || {}).slice(0, 1500)).run();
+      .bind(clubId, t, w, role, action, dj).run();
     if (Math.random() < 0.04) {      // sesekali bersihkan catatan lebih dari 90 hari
       await env.DB.prepare("DELETE FROM audit_log WHERE t < ?").bind(new Date(Date.now() - 90 * 864e5).toISOString()).run();
     }
@@ -178,7 +198,32 @@ export async function rlFail(env, request) {
   if (!d || Date.now() - d.t >= RL_WIN) d = { n: 0, t: Date.now() };
   d.n++;
   await env.DB.prepare("INSERT OR REPLACE INTO docs(coll,id,data) VALUES('staff_rl',?,?)").bind(ipOf(request), JSON.stringify(d)).run();
+  await rlSweep(env);
 }
+// Catatan pembatas yang sudah lewat 1 hari dihapus sesekali, supaya tidak menumpuk di database
+async function rlSweep(env) {
+  if (Math.random() >= 0.03) return;
+  try {
+    await env.DB.prepare("DELETE FROM docs WHERE coll='staff_rl' AND CAST(json_extract(data,'$.t') AS INTEGER) < ?").bind(Date.now() - 864e5).run();
+  } catch (e) { /* membersihkan tidak boleh mengganggu pekerjaan utama */ }
+}
+// Pembatas jumlah per IP (atau per kunci lain bila diberikan) untuk aksi publik. true = boleh, false = sudah melewati batas.
+export async function hitLimit(env, request, prefix, max, winMs, key) {
+  const id = prefix + "|" + (key != null ? String(key) : ipOf(request));
+  const r = await env.DB.prepare("SELECT data FROM docs WHERE coll='staff_rl' AND id=?").bind(id).first();
+  let d = r ? JSON.parse(r.data) : null;
+  if (!d || Date.now() - d.t >= winMs) d = { n: 0, t: Date.now() };
+  if (d.n >= max) return false;
+  d.n++;
+  await env.DB.prepare("INSERT OR REPLACE INTO docs(coll,id,data) VALUES('staff_rl',?,?)").bind(id, JSON.stringify(d)).run();
+  await rlSweep(env);
+  return true;
+}
+// Kata sandi: minimal 8 karakter, ada huruf dan angka, tidak memuat nama pengguna
+const pwProblem = (pw, username) =>
+  pw.length < 8 ? "Kata sandi minimal 8 karakter." :
+  !/[a-zA-Z]/.test(pw) || !/[0-9]/.test(pw) ? "Kata sandi harus berisi huruf dan angka." :
+  username && pw.toLowerCase().includes(username) ? "Kata sandi tidak boleh memuat nama pengguna." : "";
 const TOO_MANY = { error: "Terlalu banyak percobaan dari perangkat ini. Coba lagi beberapa menit lagi." };
 
 // Balasan JSON dengan ETag: kalau data tidak berubah, kirim 304 (hemat kuota)
@@ -222,11 +267,11 @@ export async function onRequestGet({ request, env }) {
   const u = await userFromToken(request, env);
   if (!u) return J({ error: "unauthorized" }, 401);
 
-  const rows = (await clubRows(env, u.clubId, ["students", "attendance", "evaluations", "classes", "coaches", "units"]))
+  const rows = (await clubRows(env, u.clubId, ["students", "attendance", "evaluations", "classes", "coaches", "units", "pengumuman"]))
     .sort((a, b) => (a.coll + a.id).localeCompare(b.coll + b.id));
   const scope = unitScope(u, rows.filter(r => r.coll === "students").map(r => ({ id: r.id, data: r.d })));
 
-  const out = { students: [], attendance: [], evaluations: [], classes: [], coaches: [], units: [] };
+  const out = { students: [], attendance: [], evaluations: [], classes: [], coaches: [], units: [], pengumuman: [] };
   for (const { coll, id, d } of rows) {
     if (coll === "students") {
       if (scope && !scope.ids.has(id)) continue;
@@ -260,6 +305,11 @@ export async function onRequestGet({ request, env }) {
     } else if (coll === "coaches") {
       delete d.wa; delete d.ratingSummary;
       out.coaches.push({ id, ...d });
+    } else if (coll === "pengumuman") {
+      // pelatih hanya melihat yang belum berakhir, untuk semua unit atau unit yang diberikan kepadanya
+      if (String(d.sampai || "") < wibToday()) continue;
+      if (scope && d.unit && !scope.units.has(unitKey(d.unit))) continue;
+      out.pengumuman.push({ id, judul: clip(d.judul, 120), isi: clip(d.isi, 1500), unit: clip(d.unit, 40), mulai: clip(d.mulai, 10), sampai: clip(d.sampai, 10) });
     }
   }
   return jsonEtag(request, {
@@ -320,7 +370,7 @@ export async function onRequestPost({ request, env }) {
     if (c.error) return J({ error: "Kode dojang tidak ditemukan." }, 404);
     if (!validUser(username)) return J({ error: "Nama pengguna 3-30 karakter: huruf kecil, angka, titik, strip atau garis bawah." }, 400);
     if (!name) return J({ error: "Nama lengkap wajib diisi." }, 400);
-    if (password.length < 6) return J({ error: "Kata sandi minimal 6 karakter." }, 400);
+    { const pp = pwProblem(password, username); if (pp) return J({ error: pp }, 400); }
     if (await getUser(env, clubId, username)) return J({ error: "Nama pengguna sudah dipakai. Pilih yang lain." }, 409);
     const cnt = await env.DB.prepare("SELECT COUNT(*) AS n FROM docs WHERE coll='staff' AND json_extract(data,'$.clubId')=? AND json_extract(data,'$.pending')=1").bind(clubId).first();
     if (cnt && cnt.n >= 30) return J({ error: "Terlalu banyak pendaftar yang belum disetujui. Hubungi pelatih utama." }, 429);
@@ -340,7 +390,7 @@ export async function onRequestPost({ request, env }) {
     const user = await userFromToken(request, env);
     if (!user) return J({ error: "unauthorized" }, 401);
     const oldp = clip(body.old, 100), next = clip(body.next, 100);
-    if (next.length < 6) return J({ error: "Kata sandi baru minimal 6 karakter." }, 400);
+    { const pp = pwProblem(next, user.username); if (pp) return J({ error: pp }, 400); }
     if (user.lockUntil && user.lockUntil > Date.now()) return J({ error: "Terlalu banyak percobaan. Coba lagi nanti." }, 429);
     const good = same(await pbkdf2(oldp, fromB64(user.salt)), fromB64(user.hash));
     const { _club, ...rec } = user;
@@ -412,10 +462,10 @@ export async function onRequestPost({ request, env }) {
     const password = body.password == null ? "" : clip(body.password, 100);
     if (!validUser(username)) return J({ error: "Nama pengguna 3-30 karakter: huruf kecil, angka, titik, strip atau garis bawah." }, 400);
     if (!name) return J({ error: "Nama pelatih wajib diisi." }, 400);
-    if (password && password.length < 6) return J({ error: "Kata sandi minimal 6 karakter." }, 400);
+    if (password) { const pp = pwProblem(password, username); if (pp) return J({ error: pp }, 400); }
 
     const old = await getUser(env, clubId, username);
-    if (!old && !password) return J({ error: "Akun baru wajib diberi kata sandi (minimal 6 karakter)." }, 400);
+    if (!old && !password) return J({ error: "Akun baru wajib diberi kata sandi (minimal 8 karakter, huruf dan angka)." }, 400);
 
     const u = old || { username, role: "pelatih", active: true, createdAt: new Date().toISOString() };
     u.name = name;
@@ -466,7 +516,8 @@ export async function onRequestPost({ request, env }) {
         if (slugName(old.name) === slugName(name)) { exists = true; break; }
       }
       if (exists || !username) { skipped.push(name); continue; }
-      const password = Array.from(rand(8), b => AL[b % AL.length]).join("");
+      let password = "";
+      do password = Array.from(rand(10), b => AL[b % AL.length]).join(""); while (pwProblem(password, ""));
       const salt = rand(16);
       await putUser(env, clubId, username, {
         username, name, role: "pelatih", active: true, perm: { absen: false, nilai: false },

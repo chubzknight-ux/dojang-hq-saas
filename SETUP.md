@@ -33,6 +33,14 @@ Setelah mengubah variabel, deploy ulang.
 4. Pelatih masuk lewat `?pelatih=1&club=KODE`. Pelatih hanya melihat murid di unit yang diberikan dan tidak melihat nomor WA atau iuran.
 5. Orang tua membuka tautan portal murid yang dibagikan admin.
 
+## Fitur untuk admin & orang tua
+- **Pengumuman** (menu Pengumuman, hanya Admin klub): tampil di Dashboard dan Portal Orang Tua sesuai unit dan tanggal tayang. Pelatih ikut melihatnya di dashboard, hanya untuk unit yang diberikan kepadanya.
+- **Ringkasan bulanan** (hanya Admin klub, karena memuat iuran): murid baru, iuran, kehadiran per unit, naik sabuk, penilaian. Bisa disalin untuk WA atau diunduh CSV.
+- **Tanggal lahir** murid (opsional): usia dihitung otomatis. **Riwayat sabuk** dicatat saat lulus ujian atau sabuk dinaikkan.
+- **Absensi & iuran aman**: hanya centang yang berubah yang dikirim, jadi centang pelatih tidak tertimpa. Tanpa sinyal, perubahan disimpan di HP (admin maupun pelatih) dan dikirim otomatis saat online.
+- **Portal Orang Tua** meminta nama anak sekali per HP (nama salah satu saudara kandung cukup). Nomor WA pelatih baru tampil setelah itu.
+- Admin terkunci otomatis bila 12 jam tidak dipakai. Setiap simpan/hapus oleh admin tercatat di Riwayat aktivitas.
+
 ## Keamanan
 - Login admin dibatasi 10 percobaan gagal per 15 menit per IP.
 - Sandi pelatih dan PIN admin klub disimpan ter-hash (PBKDF2). PIN lama yang masih berupa teks otomatis di-hash saat admin klub berhasil masuk berikutnya.
