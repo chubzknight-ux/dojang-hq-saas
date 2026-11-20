@@ -25,7 +25,7 @@ const rng = seed => { let a = seed; return () => { a = (a + 0x6D2B79F5) | 0; let
 export function itemsFor(pr, sid, date) {
   const items = Array.isArray(pr.items) ? pr.items : [];
   if (pr.mode !== "acak" || items.length < 2) return items;
-  const n = Math.max(1, Math.min(pr.n || 3, items.length));
+  const n = Math.max(1, Math.min(pr.n || 2, items.length));
   const R = rng(fnv(String(sid).toLowerCase() + "|" + (pr.seed || "") + (pr.harian ? "|" + date : "")));
   const shuf = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const kuat = shuf(items.filter(x => CAT[x.k] === "kuat")), lentur = shuf(items.filter(x => CAT[x.k] !== "kuat"));
@@ -81,10 +81,10 @@ async function staffCtx(env, request) {
 
 async function getPR(env, clubId) {
   const row = await env.DB.prepare("SELECT data FROM docs WHERE coll='champion_pr' AND id=?").bind(clubId).first();
-  if (!row) return { items: [], note: "", mode: "sama" };
+  if (!row) return { items: [], note: "", mode: "sama", n: 2 };
   try {
     const d = JSON.parse(row.data);
-    return { items: Array.isArray(d.items) ? d.items : [], note: d.note || "", mode: d.mode === "acak" ? "acak" : "sama", n: d.n || 3, harian: !!d.harian, seed: d.seed || "", updatedAt: d.updatedAt || "", by: d.by || "" };
+    return { items: Array.isArray(d.items) ? d.items : [], note: d.note || "", mode: d.mode === "acak" ? "acak" : "sama", n: d.n || 2, harian: !!d.harian, seed: d.seed || "", updatedAt: d.updatedAt || "", by: d.by || "" };
   } catch (e) { return { items: [], note: "", mode: "sama" }; }
 }
 
@@ -209,7 +209,7 @@ export async function onRequestPost({ request, env }) {
     const mode = b.mode === "acak" ? "acak" : "sama";
     const seed = b.reshuffle || !old.seed ? Math.random().toString(36).slice(2, 10) : old.seed;
     const doc = {
-      clubId: s.clubId, items, note: clip(b.note, 300), mode, n: Math.max(1, Math.min(6, parseInt(b.n) || 3)), harian: !!b.harian, seed,
+      clubId: s.clubId, items, note: clip(b.note, 300), mode, n: Math.max(1, Math.min(4, parseInt(b.n) || 2)), harian: !!b.harian, seed,
       updatedAt: new Date().toISOString(), by: clip(s.who, 60)
     };
     await env.DB.prepare("INSERT OR REPLACE INTO docs(coll,id,data) VALUES('champion_pr',?,?)").bind(s.clubId, JSON.stringify(doc)).run();
