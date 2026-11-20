@@ -667,6 +667,8 @@ let TOKEN='',CLUB={name:'',logo:''},KIDS=[],KID=null,PR=[],PRNOTE='',PRACAK=fals
 function setKid(k){KID=k||null;PR=(KID&&Array.isArray(KID.pr))?KID.pr:[];if(KID)store.set('ch_last',String(KID.id).toLowerCase());}
 const HK=()=>'ch_hist_'+(KID?String(KID.id).toLowerCase():'x');
 const prOf=k=>PR.find(p=>p.k===k);
+// gerakan yang paling simpel & aman untuk anak (dipakai sebagai pilihan bawaan PR)
+const SIMPEL=['kuda','squat','lompat','plank','bridge','flamingo','lari','jinjit','superman','cossack','kupu','jerapah','split','ayun'];
 function doneToday(){
   const m={};if(!KID)return m;
   const sid=String(KID.id).toLowerCase();
@@ -1062,17 +1064,20 @@ function renderCoach(){
     (belum.length?`<div class="card"><b>⏳ Belum latihan (${belum.length})</b><div class="belum">${belum.map(s=>`<span title="${esc((s.pr||[]).map(x=>EX[x.k]?EX[x.k].name:x.k).join(', '))}">${esc(s.n)}${j.pr.mode==='acak'&&s.pr&&s.pr.length?' '+s.pr.map(x=>EX[x.k]?EX[x.k].emoji:'').join(''):''}</span>`).join('')}</div></div>`:'');
 }
 function renderPrEdit(){
-  const j=COACH,pr=j.pr||{},cur=new Map((pr.items||[]).map(x=>[x.k,x.t])),dis=j.canEdit?'':'disabled',acak=pr.mode==='acak';
-  const info=pr.updatedAt?`<p class="mut">Terakhir diubah ${new Date(pr.updatedAt).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}${pr.by?' oleh '+esc(pr.by):''}</p>`:'<p class="mut">Belum ada PR. Atur di bawah lalu simpan.</p>';
-  const row=([k,e])=>`<div class="gen"><input type="checkbox" id="g_${k}" ${cur.has(k)?'checked':''} ${dis}><span>${e.emoji} ${esc(e.name)}<br><small class="mut">${unitOf(e)}</small></span><input type="number" id="gt_${k}" value="${cur.get(k)||e.def}" min="1" inputmode="numeric" ${dis}></div>`;
+  const j=COACH,pr0=j.pr||{},baru=!pr0.updatedAt;
+  // PR belum pernah diatur: bawaan = acak per anak, 2 gerakan simpel per hari
+  const pr=baru?{...pr0,mode:'acak',n:2,harian:true,items:SIMPEL.map(k=>({k,t:EX[k].def}))}:pr0;
+  const cur=new Map((pr.items||[]).map(x=>[x.k,x.t])),dis=j.canEdit?'':'disabled',acak=pr.mode==='acak';
+  const info=baru?'<p class="mut" style="background:#fff7ed;border-radius:12px;padding:8px 10px">💡 Saran awal sudah disiapkan: <b>tiap anak 2 gerakan simpel, acak, berganti setiap hari</b>. Tinggal tekan <b>Simpan PR</b>.</p>':pr.updatedAt?`<p class="mut">Terakhir diubah ${new Date(pr.updatedAt).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}${pr.by?' oleh '+esc(pr.by):''}</p>`:'<p class="mut">Belum ada PR. Atur di bawah lalu simpan.</p>';
+  const row=([k,e])=>`<div class="gen"><input type="checkbox" id="g_${k}" ${cur.has(k)?'checked':''} ${dis}><span>${e.emoji} ${esc(e.name)}<br><small class="mut">${unitOf(e)}${SIMPEL.includes(k)?' · 👍 simpel':''}</small></span><input type="number" id="gt_${k}" value="${cur.get(k)||e.def}" min="1" inputmode="numeric" ${dis}></div>`;
   const ent=Object.entries(EX);
   $('#prEdit').innerHTML=info+
     `<label>Cara membagi PR</label><select id="gMode" ${dis}><option value="sama" ${acak?'':'selected'}>Sama untuk semua anak</option><option value="acak" ${acak?'selected':''}>🎲 Acak per anak (tiap anak beda)</option></select>`+
-    `<div id="gAcak" style="${acak?'':'display:none'}"><label>Tiap anak dapat berapa latihan?</label><select id="gN" ${dis}>${[1,2,3,4,5,6].map(n=>`<option ${n===(pr.n||3)?'selected':''}>${n}</option>`).join('')}</select>`+
+    `<div id="gAcak" style="${acak?'':'display:none'}"><label>Tiap anak dapat berapa latihan?</label><select id="gN" ${dis}>${[1,2,3,4].map(n=>`<option ${n===(pr.n||2)?'selected':''}>${n}</option>`).join('')}</select>`+
     `<label class="chk"><input type="checkbox" id="gHarian" ${pr.harian?'checked':''} ${dis}> Acak ulang setiap hari</label><p class="mut" style="margin-top:6px">Latihan dipilih acak dari yang dicentang, dicampur kekuatan & kelenturan.</p></div>`+
     `<label style="margin-top:14px">💥 Kekuatan</label>`+ent.filter(([,e])=>e.cat==='kuat').map(row).join('')+
     `<label style="margin-top:14px">🌈 Kelenturan</label>`+ent.filter(([,e])=>e.cat==='lentur').map(row).join('')+
-    (j.canEdit?`<button class="btn sec" data-act="pickAll">☑️ Centang semua</button>`:'')+
+    (j.canEdit?`<button class="btn sec" data-act="pickSimple">👍 Centang yang simpel saja</button><button class="btn sec" data-act="pickAll">☑️ Centang semua</button>`:'')+
     `<label>Pesan untuk anak (opsional)</label><textarea id="gNote" maxlength="300" ${dis} placeholder="Contoh: Latihan tiap hari ya, minimal 1x sehari!">${esc(pr.note||'')}</textarea>`+
     (j.canEdit?`<button class="btn" data-act="savePr">💾 Simpan PR</button>${acak?'<button class="btn sec" data-act="reshuffle">🎲 Acak ulang sekarang</button>':''}`:'<p class="mut">Akun ini hanya bisa melihat PR.</p>')+
     `<button class="btn wa" data-act="announce">📢 Umumkan PR ke grup WA</button>`;
@@ -1080,7 +1085,7 @@ function renderPrEdit(){
 }
 async function savePr(_,reshuffle){
   const items=Object.keys(EX).filter(k=>$('#g_'+k).checked).map(k=>({k,t:Math.max(1,parseInt($('#gt_'+k).value)||EX[k].def)}));
-  const mode=$('#gMode').value,n=parseInt($('#gN').value)||3;
+  const mode=$('#gMode').value,n=parseInt($('#gN').value)||2;
   if(mode==='acak'&&items.length<2){alert('Untuk mode acak, centang minimal 2 latihan ya');return;}
   try{
     const r=await fetch('/api/champion',{method:'POST',headers:{'content-type':'application/json',...staffHeaders()},body:JSON.stringify({action:'setpr',items,note:$('#gNote').value.trim(),mode,n,harian:$('#gHarian').checked,reshuffle:!!reshuffle})});
@@ -1092,7 +1097,7 @@ function announce(){
   const pr=COACH.pr||{},items=pr.items||[];
   if(!items.length){alert('Simpan PR dulu ya');return;}
   const list=items.map(x=>`${EX[x.k].emoji} ${EX[x.k].name}: ${targetTxt(EX[x.k],x.t)}`).join('\n');
-  const head=pr.mode==='acak'?`🎲 Setiap anak dapat ${Math.min(pr.n||3,items.length)} latihan ACAK (beda-beda tiap anak${pr.harian?', berganti setiap hari':''}). Cek di Champion masing-masing ya!\n\nDaftar latihannya:\n`:'';
+  const head=pr.mode==='acak'?`🎲 Setiap anak dapat ${Math.min(pr.n||2,items.length)} latihan ACAK (beda-beda tiap anak${pr.harian?', berganti setiap hari':''}). Cek di Champion masing-masing ya!\n\nDaftar latihannya:\n`:'';
   const msg=`📌 PR Champion${COACH.club&&COACH.club.name?' – '+COACH.club.name:''}\n${head}${list}${pr.note?'\n\n💬 '+pr.note:''}\n\nCara mengerjakan:\n1. Buka Portal Orang Tua anak (link dari pelatih)\n2. Tekan tombol 🏆 Champion\n3. Latihan di depan kamera HP, hasilnya otomatis ABSEN ✅\n\nSudah pernah buka? Langsung saja: ${location.origin}/champion`;
   location.href='https://wa.me/?text='+encodeURIComponent(msg);
 }
@@ -1119,7 +1124,7 @@ const ACTS={
   again:()=>pick(cur),share,install,
   kid:t=>{setKid(KIDS.find(k=>String(k.id)===t.dataset.id)||KID);renderHome();},
   voice:()=>{voiceOn=!voiceOn;store.set('ch_voice',voiceOn);$('#vBtn').textContent=voiceOn?'🔊':'🔇';if(!voiceOn)try{speechSynthesis.cancel()}catch(e){}},
-  coachLoad,savePr:()=>savePr(null,false),reshuffle:()=>{if(confirm('Acak ulang PR semua anak?'))savePr(null,true);},pickAll:()=>{Object.keys(EX).forEach(k=>{const c=$('#g_'+k);if(c)c.checked=true;});},announce,rekapWa,foto:loadFoto
+  coachLoad,savePr:()=>savePr(null,false),reshuffle:()=>{if(confirm('Acak ulang PR semua anak?'))savePr(null,true);},pickSimple:()=>{Object.keys(EX).forEach(k=>{const c=$('#g_'+k);if(c)c.checked=SIMPEL.includes(k);});},pickAll:()=>{Object.keys(EX).forEach(k=>{const c=$('#g_'+k);if(c)c.checked=true;});},announce,rekapWa,foto:loadFoto
 };
 document.addEventListener('click',ev=>{const t=ev.target.closest('[data-act]');if(t&&ACTS[t.dataset.act])ACTS[t.dataset.act](t);});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&running&&S&&S.phase!=='act'){stopRun();show('setup');}});
