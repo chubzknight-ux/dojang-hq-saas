@@ -993,8 +993,25 @@ async function install(){if(!installEvt)return;installEvt.prompt();try{await ins
 /* ---------- mulai sebagai anak ---------- */
 function needPortal(id,msg){
   show('boot');
-  $('#bootMsg').innerHTML=msg||'Champion dibuka lewat <b>Portal Orang Tua</b> supaya nama anak otomatis terisi.<br>Buka link portal dari pelatih, verifikasi nama anak, lalu tekan tombol <b>🏆 Champion</b>.';
-  $('#bootAct').innerHTML=id?`<a class="btn" style="text-decoration:none" href="/?portal=${encodeURIComponent(id)}">Buka Portal Orang Tua</a>`:'';
+  const cid=id||qs.get('id')||store.get('ch_last','')||'';
+  $('#bootMsg').innerHTML=msg||'Masuk sebagai murid: ketik namamu.';
+  $('#bootAct').innerHTML=`<div style="margin-top:14px;text-align:left">`+
+    (cid?'':`<label class="mut" style="font-weight:700">Kode murid (dari pelatih)</label><input id="slId" autocomplete="off" autocapitalize="off" style="margin:6px 0 10px">`)+
+    `<label class="mut" style="font-weight:700">Namamu</label><input id="slName" autocomplete="name" placeholder="Nama lengkap atau nama panggilan" style="margin-top:6px">`+
+    `<button class="btn" id="slGo">Masuk 🏆</button><p class="mut center" id="slErr" style="color:#dc2626;margin-top:10px"></p></div>`;
+  $('#slGo').onclick=async()=>{
+    const sid=String(cid||($('#slId')||{}).value||'').trim(),name=$('#slName').value.trim(),err=$('#slErr');
+    if(!sid||!name){err.textContent='Isi nama dulu ya.';return;}
+    $('#slGo').disabled=true;err.textContent='';
+    try{
+      const r=await fetch('/api/portal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'verify',id:sid,name,self:true})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||!j.token){err.textContent=j.error||'Gagal masuk.';$('#slGo').disabled=false;return;}
+      const m=ptMap();(j.ids||[sid]).forEach(x=>{m[String(x).toLowerCase()]=j.token;});
+      localStorage.setItem(PT_KEY,JSON.stringify(m));store.set('ch_last',String(sid).toLowerCase());
+      bootKid();
+    }catch(e){err.textContent='Tidak bisa terhubung. Cek internet ya.';$('#slGo').disabled=false;}
+  };
 }
 async function bootKid(){
   const m=ptMap();let id=String(qs.get('id')||store.get('ch_last','')||'').toLowerCase(),tok=id?m[id]:'';
@@ -1004,7 +1021,7 @@ async function bootKid(){
   try{
     const r=await fetch('/api/champion?mode=kid',{headers:{'X-Portal-Token':tok},cache:'no-store'});
     const j=await r.json().catch(()=>({}));
-    if(r.status===401)return needPortal(id,'Verifikasi portal sudah kedaluwarsa. Buka Portal Orang Tua dan masukkan nama anak lagi ya.');
+    if(r.status===401)return needPortal(id,'Sesi sudah berakhir. Ketik namamu lagi ya.');
     if(!r.ok)throw new Error(j.error||'Gagal memuat');
     CLUB=j.club||CLUB;KIDS=j.kids||[];PRNOTE=(j.pr&&j.pr.note)||'';PRACAK=!!(j.pr&&j.pr.mode==='acak');TODAY=j.today||[];
     store.set('ch_cache',{CLUB,KIDS,PRNOTE,PRACAK});
