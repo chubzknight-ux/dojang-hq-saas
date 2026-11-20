@@ -580,7 +580,7 @@ if(portalId){
     const recentEv=[...evList].sort((a,b)=>String(a.date||a.id||"")<String(b.date||b.id||"")?1:-1);
     const avField=fDef=>{const v=recentEv.map(x=>readEvalFieldScore(x,fDef)).filter(n=>n!==null);return v.length?(v.reduce((p,c)=>p+c,0)/v.length).toFixed(1):"–"};
     const unitClasses=clsList.filter(c=>(c.unit||"Utama")===sUnit);
-    const nc=sortNextCls(unitClasses)[0]||sortNextCls(clsList)[0];
+    const nc=sortNextCls(unitClasses)[0];
     const waKonfirm=isEN()?"Hello "+HEAD()+", I am the parent/guardian of "+d.n+" (Unit "+sUnit+") confirming monthly tuition for "+ymNow+" ("+rp(sFee)+") at "+CN()+".":"Halo "+HEAD()+", saya orang tua/wali dari "+d.n+" (Unit "+sUnit+") ingin konfirmasi iuran bulan "+ymNow+" ("+rp(sFee)+") di "+CN()+".";
     const cutiBanner=d.cuti?`<div class="note" style="border-left-color:#F2B600"><b>${T("Status Murid: Sedang Cuti","Student Status: On Leave")}</b>${d.cutiKet?" · "+esc(d.cutiKet):""}${d.cutiTgl?" ("+T("sejak","since")+" "+esc(d.cutiTgl)+")":""}</div>`:"";
     const sibs=Array.isArray(data.siblings)?data.siblings:[];
