@@ -10,7 +10,33 @@ import { tokenIds } from "./portal.js";
 //   champion_pr   : PR aktif per klub (id = clubId)
 //   champion      : hasil latihan (tanpa foto)
 //   champion_foto : foto posisi terbaik, dihapus otomatis setelah 60 hari
-const EX = new Set(["kuda", "squat", "lompat", "plank", "bridge", "samping", "flamingo", "cossack", "split", "lunge", "kupu", "yeop"]);
+// kategori tiap latihan (kuat = kekuatan, lentur = kelenturan); dipakai untuk PR acak yang seimbang
+const CAT = {
+  kuda: "kuat", squat: "kuat", lompat: "kuat", plank: "kuat", bridge: "kuat", samping: "kuat", flamingo: "kuat",
+  pushup: "kuat", situp: "kuat", superman: "kuat", wallsit: "kuat", lari: "kuat", jinjit: "kuat",
+  cossack: "lentur", split: "lentur", lunge: "lentur", kupu: "lentur", yeop: "lentur", jerapah: "lentur", apchagi: "lentur", ayun: "lentur"
+};
+const EX = new Set(Object.keys(CAT));
+
+// ===== PR acak per anak =====
+// Pilihan acak ditentukan dari (id murid + seed PR [+ tanggal bila diacak harian]), jadi selalu sama di HP anak maupun di halaman pelatih.
+const fnv = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+const rng = seed => { let a = seed; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+export function itemsFor(pr, sid, date) {
+  const items = Array.isArray(pr.items) ? pr.items : [];
+  if (pr.mode !== "acak" || items.length < 2) return items;
+  const n = Math.max(1, Math.min(pr.n || 3, items.length));
+  const R = rng(fnv(String(sid).toLowerCase() + "|" + (pr.seed || "") + (pr.harian ? "|" + date : "")));
+  const shuf = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const kuat = shuf(items.filter(x => CAT[x.k] === "kuat")), lentur = shuf(items.filter(x => CAT[x.k] !== "kuat"));
+  const out = [];
+  let turn = R() < 0.5;
+  while (out.length < n && (kuat.length || lentur.length)) {
+    out.push(((turn && kuat.length) || !lentur.length ? kuat : lentur).shift());
+    turn = !turn;
+  }
+  return out;
+}
 const FOTO_DAYS = 60;
 const clip = (v, n) => String(v == null ? "" : v).slice(0, n);
 const okDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
@@ -55,11 +81,11 @@ async function staffCtx(env, request) {
 
 async function getPR(env, clubId) {
   const row = await env.DB.prepare("SELECT data FROM docs WHERE coll='champion_pr' AND id=?").bind(clubId).first();
-  if (!row) return { items: [], note: "" };
+  if (!row) return { items: [], note: "", mode: "sama" };
   try {
     const d = JSON.parse(row.data);
-    return { items: Array.isArray(d.items) ? d.items : [], note: d.note || "", updatedAt: d.updatedAt || "", by: d.by || "" };
-  } catch (e) { return { items: [], note: "" }; }
+    return { items: Array.isArray(d.items) ? d.items : [], note: d.note || "", mode: d.mode === "acak" ? "acak" : "sama", n: d.n || 3, harian: !!d.harian, seed: d.seed || "", updatedAt: d.updatedAt || "", by: d.by || "" };
+  } catch (e) { return { items: [], note: "", mode: "sama" }; }
 }
 
 async function resultsOn(env, clubId, tgl) {
@@ -81,10 +107,11 @@ export async function onRequestGet({ request, env }) {
     const today = wibToday();
     const mine = new Set(k.kids.map(x => String(x.id)));
     const res = (await resultsOn(env, k.clubId, today)).filter(r => mine.has(String(r.sid)));
+    const pr = await getPR(env, k.clubId);
     return new Response(JSON.stringify({
       club: await clubInfo(env, k.club),
-      kids: k.kids,
-      pr: await getPR(env, k.clubId),
+      kids: k.kids.map(x => ({ ...x, pr: itemsFor(pr, x.id, today) })),
+      pr: { note: pr.note, mode: pr.mode },
       today: res.map(r => ({ sid: r.sid, ex: r.ex, skor: r.skor }))
     }), { headers: { "content-type": "application/json", ...NOSTORE } });
   }
@@ -102,11 +129,14 @@ export async function onRequestGet({ request, env }) {
       if (s.scope && !s.scope.ids.has(r.id)) continue;
       students.push({ id: r.id, n: d.n || r.id, unit: d.unit || "Utama" });
     }
+    const pr = await getPR(env, s.clubId);
+    for (const st of students) st.pr = itemsFor(pr, st.id, tgl);
     const allow = new Set(students.map(x => String(x.id)));
     const results = (await resultsOn(env, s.clubId, tgl))
       .filter(r => !s.scope || allow.has(String(r.sid)))
       .map(({ clubId, ...r }) => r);
-    return J({ tgl, club: await clubInfo(env, s.club), role: s.role, who: s.who, canEdit: s.canEdit, pr: await getPR(env, s.clubId), students, results });
+    const { seed, ...prOut } = pr;
+    return J({ tgl, club: await clubInfo(env, s.club), role: s.role, who: s.who, canEdit: s.canEdit, pr: prOut, students, results });
   }
 
   if (mode === "foto") {
@@ -151,7 +181,7 @@ export async function onRequestPost({ request, env }) {
       clubId: k.clubId, date, ts, sid: kid.id, n: kid.n, unit: kid.unit,
       ex: b.ex, exName: clip(b.exName, 50), hasil: clip(b.hasil, 80),
       skor: Math.max(0, Math.min(100, parseInt(b.skor) || 0)), bintang: Math.max(0, Math.min(3, parseInt(b.bintang) || 0)),
-      inPr: pr.items.some(x => x.k === b.ex), foto: !!foto
+      inPr: itemsFor(pr, kid.id, date).some(x => x.k === b.ex), foto: !!foto
     };
     await env.DB.prepare("INSERT OR REPLACE INTO docs(coll,id,data) VALUES('champion',?,?)").bind(id, JSON.stringify(doc)).run();
     if (foto) {
@@ -171,13 +201,20 @@ export async function onRequestPost({ request, env }) {
     if (s.error) return J({ error: s.error }, s.status);
     if (!s.canEdit) return J({ error: "Akun ini belum diberi izin mengatur PR." }, 403);
     const items = [];
-    for (const x of Array.isArray(b.items) ? b.items.slice(0, 12) : []) {
+    for (const x of Array.isArray(b.items) ? b.items.slice(0, 30) : []) {
       if (!x || !EX.has(x.k) || items.some(y => y.k === x.k)) continue;
       items.push({ k: x.k, t: Math.max(1, Math.min(600, parseInt(x.t) || 1)) });
     }
-    const doc = { clubId: s.clubId, items, note: clip(b.note, 300), updatedAt: new Date().toISOString(), by: clip(s.who, 60) };
+    const old = await getPR(env, s.clubId);
+    const mode = b.mode === "acak" ? "acak" : "sama";
+    const seed = b.reshuffle || !old.seed ? Math.random().toString(36).slice(2, 10) : old.seed;
+    const doc = {
+      clubId: s.clubId, items, note: clip(b.note, 300), mode, n: Math.max(1, Math.min(6, parseInt(b.n) || 3)), harian: !!b.harian, seed,
+      updatedAt: new Date().toISOString(), by: clip(s.who, 60)
+    };
     await env.DB.prepare("INSERT OR REPLACE INTO docs(coll,id,data) VALUES('champion_pr',?,?)").bind(s.clubId, JSON.stringify(doc)).run();
-    return J({ ok: true, pr: { items: doc.items, note: doc.note, updatedAt: doc.updatedAt, by: doc.by } });
+    const { clubId: _c, seed: _s, ...out } = doc;
+    return J({ ok: true, pr: out });
   }
 
   return J({ error: "Aksi tidak dikenal" }, 400);

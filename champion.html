@@ -507,11 +507,164 @@ const unitOf=e=>e.mode==='hold'?'detik':'kali';
 const targetTxt=(e,t)=>e.mode==='hold'?`Tahan ${t} detik`:`${t}x benar`;
 
 
+/* ---------- 9 latihan tambahan ---------- */
+Object.assign(EX,{
+pushup:{cat:'kuat',name:'Push-up Roket',emoji:'🚀',mode:'reps',def:8,view:'HP di SAMPING',desc:'Tangan & dada kuat. Boleh pakai lutut kalau belum kuat.',
+  tips:['Taruh HP di lantai di SAMPING kamu, 2 langkah besar','Tangan selebar bahu, badan lurus dari kepala ke lutut','Turun sampai dada dekat lantai, lalu dorong naik','Boleh tumpuan lutut kalau masih berat'],
+  need:[[11,13,15,23,25],[12,14,16,24,26]],bestLabel:'Turun terdalam (sudut siku)',fmtBest:v=>`${v|0}°`,
+  eval(P,S){
+    const useL=vis(P,[11,13,15,23,25])>=vis(P,[12,14,16,24,26]);
+    const [sh,el,wr,hp,kn]=useL?[11,13,15,23,25]:[12,14,16,24,26];
+    const elb=sm('e',ang(P[sh],P[el],P[wr])),body=sm('b',ang(P[sh],P[hp],P[kn])),flat=sm('f',fromVert(P[hp],P[sh]));
+    const r=S.r||(S.r={phase:'up'});
+    const meter=clamp((170-elb)/90,0,1),line=70/90,labels=[{i:el,t:`${elb|0}°`}],info=`Siku ${elb|0}° · Badan ${body|0}°`;
+    if(flat<50)return {neutral:true,cue:'Ayo posisi push-up, badan sejajar lantai',meter,line,labels,info,q:0};
+    if(r.phase==='up'){if(elb<125)Object.assign(r,{phase:'down',minE:elb,minB:body});else return {neutral:true,cue:'Turun pelan, dada ke lantai',meter,line,labels,info,q:0};}
+    r.minE=Math.min(r.minE,elb);r.minB=Math.min(r.minB,body);S.best=S.best==null?elb:Math.min(S.best,elb);
+    let rep=null;
+    if(elb>150){const ok=r.minE<=100&&r.minB>=145;rep={good:ok,msg:ok?'Bagus!':(r.minE>100?'Turun lebih rendah':'Badan lurus ya')};r.phase='up';}
+    const good=elb<=100&&body>=145;
+    return {good,cue:body<145?'Badan lurus, jangan nungging':elb>100?'Turun lagi, dada dekat lantai':'Mantap! Dorong naik!',meter,line,labels,info,q:good?meter:meter*0.5,rep};
+  }},
+situp:{cat:'kuat',name:'Sit-up Kura-kura',emoji:'🐢',mode:'reps',def:10,view:'HP di SAMPING',desc:'Perut kuat = tendangan lebih bertenaga dan seimbang.',
+  tips:['Taruh HP di lantai di SAMPING kamu, 2 langkah besar','Tidur telentang, lutut ditekuk, tangan di dada','Bangun sampai dada dekat lutut, lalu turun pelan','Turun lagi sampai punggung di lantai = 1 hitungan'],
+  need:[[11,23,25],[12,24,26]],bestLabel:'Bangun tertinggi (sudut pinggul)',fmtBest:v=>`${v|0}° (makin kecil makin tinggi)`,
+  eval(P,S){
+    const useL=vis(P,[11,23,25])>=vis(P,[12,24,26]);
+    const [sh,hp,kn]=useL?[11,23,25]:[12,24,26];
+    const a=sm('a',ang(P[sh],P[hp],P[kn]));
+    const r=S.r||(S.r={phase:'down'});
+    const meter=clamp((140-a)/80,0,1),line=60/80,labels=[{i:hp,t:`${a|0}°`}],info=`Pinggul ${a|0}°`;
+    if(r.phase==='down'){if(a<105)Object.assign(r,{phase:'up',minA:a});else return {neutral:true,cue:'Tidur, lutut ditekuk, lalu bangun!',meter,line,labels,info,q:0};}
+    r.minA=Math.min(r.minA,a);S.best=S.best==null?a:Math.min(S.best,a);
+    let rep=null;
+    if(a>120){const ok=r.minA<=80;rep={good:ok,msg:ok?'Bagus!':'Bangun lebih tinggi'};r.phase='down';}
+    const good=a<=80;
+    return {good,cue:good?'Mantap! Turun pelan':'Bangun lagi, dada ke lutut',meter,line,labels,info,q:good?meter:meter*0.5,rep};
+  }},
+superman:{cat:'kuat',name:'Superman',emoji:'🦸',mode:'hold',def:15,view:'HP di SAMPING',desc:'Terbang seperti superman! Punggung kuat untuk tendangan.',
+  tips:['Taruh HP di lantai di SAMPING kamu, 2 langkah besar','Tiduran tengkurap, tangan lurus ke depan','Angkat tangan, dada, dan kaki sedikit dari lantai','Tahan seperti sedang terbang!'],
+  need:[[11,15,23,27],[12,16,24,28]],
+  eval(P,S){
+    const useL=vis(P,[11,15,23,27])>=vis(P,[12,16,24,28]);
+    const [sh,wr,hp,an]=useL?[11,15,23,27]:[12,16,24,28];
+    const L=Math.max(1,dist(P[hp],P[an])),flat=sm('f',fromVert(P[hp],P[sh]));
+    const leg=sm('lg',(P[hp].y-P[an].y)/L),arm=sm('ar',(P[sh].y-P[wr].y)/L);
+    let cue=null,neutral=false;
+    if(flat<55){cue='Tiduran tengkurap dulu';neutral=true;}
+    else if(leg<0.06&&arm<0.04){cue='Angkat tangan dan kaki, terbang!';neutral=true;}
+    else if(leg<0.06)cue='Kaki ikut diangkat';
+    else if(arm<0.04)cue='Tangan diangkat lurus ke depan';
+    const good=!cue,lift=clamp((leg+arm)/0.4,0,1);
+    return {good,neutral,cue:good?'Superman terbang! Tahan…':cue,meter:lift,line:0.25,labels:[],info:`Kaki ${Math.round(leg*100)} · Tangan ${Math.round(arm*100)}`,q:good?clamp(0.6+lift*0.4,0,1):0.2};
+  }},
+wallsit:{cat:'kuat',name:'Duduk Kursi Tembok',emoji:'🧱',mode:'hold',def:20,view:'HP di SAMPING',desc:'Punggung nempel tembok, duduk tanpa kursi. Paha super kuat!',
+  tips:['Taruh HP di SAMPING kamu, 2 langkah besar','Sandarkan punggung ke tembok','Turun sampai paha datar seperti duduk di kursi','Tahan, jangan pegangan lutut ya'],
+  need:ONESIDE,bestLabel:'Posisi terendah (sudut lutut)',fmtBest:v=>`${v|0}°`,
+  eval(P,S){
+    const useL=vis(P,[11,23,25,27])>=vis(P,[12,24,26,28]);
+    const [sh,hp,kn,an]=useL?[11,23,25,27]:[12,24,26,28];
+    const knee=sm('k',ang(P[hp],P[kn],P[an])),lean=sm('lean',fromVert(P[hp],P[sh]));
+    let cue=null,neutral=false;
+    if(knee>140){cue='Sandar tembok, lalu turun';neutral=true;}
+    else if(knee>110)cue='Turun lagi, paha datar';
+    else if(knee<70)cue='Terlalu rendah, naik sedikit';
+    else if(lean>25)cue='Punggung tegak nempel tembok';
+    const good=!cue;
+    if(!neutral)S.best=S.best==null?knee:Math.min(S.best,knee);
+    return {good,neutral,cue:good?'Kuat banget! Tahan…':cue,meter:clamp((170-knee)/80,0,1),line:60/80,labels:[{i:kn,t:`${knee|0}°`}],info:`Lutut ${knee|0}°`,q:good?clamp(1-Math.abs(knee-90)/40,0.5,1):0.2};
+  }},
+lari:{cat:'kuat',name:'Lari Lutut Tinggi',emoji:'🏃',mode:'reps',def:20,view:'HP di SAMPING',desc:'Lari di tempat, lutut setinggi pinggang. Tendangan makin cepat!',
+  tips:['Taruh HP di SAMPING kamu, 2–3 langkah besar','Lari di tempat, angkat lutut setinggi pinggang','Gantian kaki kiri dan kanan, makin cepat makin keren','Setiap lutut yang naik tinggi = 1 hitungan'],
+  need:BOTH,thr:0.3,bestLabel:'Lutut tertinggi',fmtBest:v=>`${v|0}° (90° = setinggi pinggang)`,
+  eval(P,S){
+    const r=S.r||(S.r={L:{up:false,max:0},R:{up:false,max:0}});
+    let rep=null,top=0;const labels=[];
+    for(const [sd,hk,kk] of [['L',23,25],['R',24,26]]){
+      const th=sm('t'+sd,fromDown(P[hk],P[kk]),0.5),st=r[sd];top=Math.max(top,th);labels.push({i:kk,t:`${th|0}°`});
+      if(!st.up&&th>40){st.up=true;st.max=th;}
+      else if(st.up){st.max=Math.max(st.max,th);if(th<25){st.up=false;const ok=st.max>=70;if(!rep)rep={good:ok,msg:ok?'Bagus!':'Lutut lebih tinggi!'};}}
+    }
+    S.best=Math.max(S.best||0,top);
+    const good=top>=70;
+    return {good,neutral:top<40,cue:good?'Cepat! Ganti kaki!':top>=40?'Lutut lebih tinggi!':'Angkat lutut bergantian!',meter:clamp(top/100,0,1),line:0.7,labels,info:`Lutut ${top|0}°`,q:good?clamp(top/100,0.5,1):0.3,rep};
+  }},
+jinjit:{cat:'kuat',name:'Jinjit Kelinci',emoji:'🐰',mode:'reps',def:15,view:'HP di SAMPING',desc:'Jinjit naik-turun. Betis kuat, lompatan dan tendangan makin pegas!',
+  tips:['Taruh HP di SAMPING kamu, 2 langkah besar, kaki harus kelihatan jelas','Berdiri tegak, boleh pegangan tembok','Naik jinjit setinggi mungkin, lalu turun pelan','Lutut tetap lurus ya'],
+  need:[[23,25,27,29,31],[24,26,28,30,32]],bestLabel:'Jinjit tertinggi',fmtBest:v=>`${Math.round(v*100)} poin`,
+  eval(P,S){
+    const useL=vis(P,[23,25,27,29,31])>=vis(P,[24,26,28,30,32]);
+    const [hp,kn,an,he,ft]=useL?[23,25,27,29,31]:[24,26,28,30,32];
+    const fl=Math.max(1,dist(P[he],P[ft])),v=sm('v',(P[ft].y-P[an].y)/fl,0.5),knee=sm('k',ang(P[hp],P[kn],P[an]));
+    const r=S.r||(S.r={phase:'down',base:null});
+    if(r.base==null)r.base=v;
+    if(r.phase==='down'&&v-r.base<0.08)r.base=r.base*0.95+v*0.05;
+    const lift=Math.max(0,v-r.base),meter=clamp(lift/0.5,0,1),line=0.3/0.5,info=`Jinjit ${Math.round(lift*100)} · Lutut ${knee|0}°`,labels=[{i:an,t:`${Math.round(lift*100)}`}];
+    if(r.phase==='down'){if(lift>0.15)Object.assign(r,{phase:'up',max:lift,minK:knee});else return {neutral:true,cue:'Naik jinjit setinggi mungkin!',meter,line,labels,info,q:0};}
+    r.max=Math.max(r.max,lift);r.minK=Math.min(r.minK,knee);S.best=Math.max(S.best||0,r.max);
+    let rep=null;
+    if(lift<0.06){const ok=r.max>=0.3&&r.minK>=150;rep={good:ok,msg:ok?'Bagus!':(r.max<0.3?'Jinjit lebih tinggi':'Lutut lurus ya')};r.phase='down';}
+    const good=lift>=0.3&&knee>=150;
+    return {good,cue:knee<150?'Lutut lurus ya':lift<0.3?'Lebih tinggi lagi!':'Mantap! Turun pelan',meter,line,labels,info,q:good?meter:meter*0.5,rep};
+  }},
+jerapah:{cat:'lentur',name:'Lipat Badan Jerapah',emoji:'🦒',mode:'hold',def:30,view:'HP di SAMPING',desc:'Duduk kaki lurus, raih ujung kaki. Paha belakang lentur, tendangan tinggi!',
+  tips:['Taruh HP di lantai di SAMPING kamu, 2 langkah besar','Duduk, kedua kaki lurus ke depan','Bungkukkan badan, tangan meraih ujung kaki','Lutut tetap lurus, tahan sambil napas pelan'],
+  need:ONESIDE,thr:0.4,bestLabel:'Lipatan terdalam (sudut pinggul)',fmtBest:v=>`${v|0}° (makin kecil makin lentur)`,
+  eval(P,S){
+    const useL=vis(P,[11,23,25,27])>=vis(P,[12,24,26,28]);
+    const [sh,hp,kn,an]=useL?[11,23,25,27]:[12,24,26,28];
+    const a=sm('a',ang(P[sh],P[hp],P[an])),knee=sm('k',ang(P[hp],P[kn],P[an])),legFlat=fromVert(P[hp],P[an])>60;
+    let cue=null,neutral=false;
+    if(!legFlat){cue='Duduk dulu, kaki lurus ke depan';neutral=true;}
+    else if(a>85){cue='Bungkuk, raih ujung kaki!';neutral=true;}
+    else if(knee<155)cue='Lutut lurus ya';
+    else if(a>65)cue='Sedikit lagi, raih lebih jauh';
+    const good=!cue;
+    if(legFlat&&knee>=155)S.best=S.best==null?a:Math.min(S.best,a);
+    return {good,neutral,cue:good?(a<=50?'Lentur kayak jerapah! Tahan…':'Bagus, tahan… napas pelan'):cue,meter:clamp((100-a)/60,0,1),line:35/60,labels:[{i:hp,t:`${a|0}°`}],info:`Pinggul ${a|0}° · Lutut ${knee|0}°`,q:good?clamp((80-a)/40,0.5,1):0.3};
+  }},
+apchagi:{cat:'lentur',name:'Patung Ap Chagi',emoji:'🥋',mode:'hold',def:20,view:'HP di SAMPING',sides:true,desc:'Tendangan depan lalu diam seperti patung. Lentur + seimbang!',
+  tips:['Taruh HP di SAMPING kamu, 2–3 langkah besar','Tendang ke depan (ke arah samping layar)','Angkat kaki minimal setinggi pinggang, lalu TAHAN','Boleh pegangan tembok/kursi. Nanti ada aba-aba "Ganti kaki!"'],
+  need:BOTH,thr:0.3,bestLabel:'Tendangan tertinggi',fmtBest:v=>`${v|0}° (90° = setinggi pinggang)`,
+  eval(P,S,dt){
+    const isL=P[27].y<P[28].y,sd=isL?'L':'R';
+    const [hk,kk,ak,hs,ks,as]=isL?[23,25,27,24,26,28]:[24,26,28,23,25,27];
+    const h=sm('h'+sd,fromDown(P[hk],P[ak])),kick=sm('kk'+sd,ang(P[hk],P[kk],P[ak])),stand=sm('sk'+sd,ang(P[hs],P[ks],P[as]));
+    let cue=null,neutral=false;
+    if(h<35){cue='Tendang ke depan, lalu tahan';neutral=true;}
+    else if(h<70)cue='Angkat lebih tinggi!';
+    else if(kick<150)cue='Luruskan kaki tendangan';
+    else if(stand<145)cue='Kaki tumpuan lurus';
+    const good=!cue;
+    if(h>=35)S.best=S.best==null?h:Math.max(S.best,h);
+    S.side=S.side||{kiri:0,kanan:0};if(good)S.side[isL?'kiri':'kanan']+=dt;
+    return {good,neutral,cue:good?(h>=90?'Patung juara! Tahan…':'Bagus! Coba lebih tinggi'):cue,meter:clamp(h/120,0,1),line:70/120,labels:[{i:ak,t:`${h|0}°`}],info:`Tinggi kaki ${h|0}° · ${isL?'Kiri':'Kanan'}`,q:good?clamp(0.6+(h-70)/50*0.4,0,1):clamp(h/140,0,0.5)};
+  }},
+ayun:{cat:'lentur',name:'Ayun Kaki Tinggi',emoji:'🌀',mode:'reps',def:10,view:'HP di SAMPING',desc:'Ayun kaki lurus ke depan setinggi mungkin. Pemanasan tendangan!',
+  tips:['Taruh HP di SAMPING kamu, 2–3 langkah besar','Pegangan tembok/kursi biar seimbang','Ayun kaki LURUS ke depan setinggi mungkin, lalu turun','Gantian kaki kiri dan kanan'],
+  need:BOTH,thr:0.3,bestLabel:'Ayunan tertinggi',fmtBest:v=>`${v|0}°`,
+  eval(P,S){
+    const r=S.r||(S.r={L:{up:false},R:{up:false}});
+    let rep=null,top=0,topK=180;const labels=[];
+    for(const [sd,hk,kk,ak] of [['L',23,25,27],['R',24,26,28]]){
+      const h=sm('h'+sd,fromDown(P[hk],P[ak]),0.5),kn=sm('k'+sd,ang(P[hk],P[kk],P[ak]),0.5),st=r[sd];
+      if(h>top){top=h;topK=kn;}labels.push({i:ak,t:`${h|0}°`});
+      if(!st.up&&h>40){st.up=true;st.max=h;st.minK=kn;}
+      else if(st.up){st.max=Math.max(st.max,h);st.minK=Math.min(st.minK,kn);
+        if(h<25){st.up=false;const ok=st.max>=80&&st.minK>=140;if(!rep)rep={good:ok,msg:ok?'Bagus!':(st.max<80?'Ayun lebih tinggi':'Kaki lurus ya')};}}
+    }
+    S.best=Math.max(S.best||0,top);
+    const good=top>=80&&topK>=140;
+    return {good,neutral:top<40,cue:top<40?'Ayun kaki lurus ke depan!':topK<140?'Kaki lurus ya':top<80?'Lebih tinggi!':'Mantap! Ganti kaki',meter:clamp(top/120,0,1),line:80/120,labels,info:`Ayunan ${top|0}° · Lutut ${topK|0}°`,q:good?clamp(top/120,0.5,1):0.3,rep};
+  }}
+});
+
 
 /* ---------- data dari Dojang HQ ---------- */
 const PT_KEY='dojang_portal_tok';
 const ptMap=()=>{try{return JSON.parse(localStorage.getItem(PT_KEY)||'{}')||{}}catch(e){return{}}};
-let TOKEN='',CLUB={name:'',logo:''},KIDS=[],KID=null,PR=[],PRNOTE='',TODAY=[];
+let TOKEN='',CLUB={name:'',logo:''},KIDS=[],KID=null,PR=[],PRNOTE='',PRACAK=false,TODAY=[];
+function setKid(k){KID=k||null;PR=(KID&&Array.isArray(KID.pr))?KID.pr:[];if(KID)store.set('ch_last',String(KID.id).toLowerCase());}
 const HK=()=>'ch_hist_'+(KID?String(KID.id).toLowerCase():'x');
 const prOf=k=>PR.find(p=>p.k===k);
 function doneToday(){
@@ -709,7 +862,7 @@ function renderHome(){
   $('#stStar').textContent=g.stars;$('#stStreak').textContent=g.streak;$('#stLvl').textContent=g.lvl;$('#stLvlName').textContent='🏅 '+g.title;
   const dn=doneToday(),nDone=PR.filter(p=>dn[p.k]!=null).length;
   $('#bubble').textContent=PR.length&&nDone===PR.length?`Keren ${nama}! PR hari ini sudah beres semua 🎉`:g.streak>=2?`Hai ${nama}! ${g.streak} hari beruntun, jangan putus ya 🔥`:`Hai ${nama}! Siap jadi Champion hari ini? 💪`;
-  $('#prBox').innerHTML=PR.length?`<div class="pr"><h3>📌 PR dari Pelatih</h3>${PRNOTE?`<div class="note">💬 ${esc(PRNOTE)}</div>`:''}<div style="font-weight:700;margin-top:6px">${nDone===PR.length?'🎉 Semua selesai & sudah absen!':`${nDone} dari ${PR.length} selesai hari ini`}</div><div class="pbar"><i style="width:${nDone/PR.length*100}%"></i></div>${PR.map(p=>{const e=EX[p.k];return `<div class="pitem" data-act="pick" data-ex="${p.k}"><span>${e.emoji}</span><span>${esc(e.name)}<br><small style="opacity:.9">${targetTxt(e,p.t)}</small></span><span>${dn[p.k]!=null?'✅':'▶️'}</span></div>`}).join('')}<div style="font-size:13px;margin-top:8px;opacity:.9">Selesai = dapat minimal 1 ⭐. Hasil otomatis masuk absen.</div></div>`:'<div class="card mut">Belum ada PR dari pelatih. Boleh latihan bebas dulu ya! 💪</div>';
+  $('#prBox').innerHTML=PR.length?`<div class="pr"><h3>📌 PR dari Pelatih${PRACAK?' · 🎲 khusus untukmu':''}</h3>${PRNOTE?`<div class="note">💬 ${esc(PRNOTE)}</div>`:''}<div style="font-weight:700;margin-top:6px">${nDone===PR.length?'🎉 Semua selesai & sudah absen!':`${nDone} dari ${PR.length} selesai hari ini`}</div><div class="pbar"><i style="width:${nDone/PR.length*100}%"></i></div>${PR.map(p=>{const e=EX[p.k];return `<div class="pitem" data-act="pick" data-ex="${p.k}"><span>${e.emoji}</span><span>${esc(e.name)}<br><small style="opacity:.9">${targetTxt(e,p.t)}</small></span><span>${dn[p.k]!=null?'✅':'▶️'}</span></div>`}).join('')}<div style="font-size:13px;margin-top:8px;opacity:.9">Selesai = dapat minimal 1 ⭐. Hasil otomatis masuk absen.</div></div>`:'<div class="card mut">Belum ada PR dari pelatih. Boleh latihan bebas dulu ya! 💪</div>';
   const ent=Object.entries(EX);
   $('#exKuat').innerHTML=ent.filter(([,e])=>e.cat==='kuat').map(([k,e])=>exCard(k,e,dn)).join('');
   $('#exLentur').innerHTML=ent.filter(([,e])=>e.cat==='lentur').map(([k,e])=>exCard(k,e,dn)).join('');
@@ -851,15 +1004,14 @@ async function bootKid(){
     const j=await r.json().catch(()=>({}));
     if(r.status===401)return needPortal(id,'Verifikasi portal sudah kedaluwarsa. Buka Portal Orang Tua dan masukkan nama anak lagi ya.');
     if(!r.ok)throw new Error(j.error||'Gagal memuat');
-    CLUB=j.club||CLUB;KIDS=j.kids||[];PR=(j.pr&&j.pr.items)||[];PRNOTE=(j.pr&&j.pr.note)||'';TODAY=j.today||[];
-    store.set('ch_cache',{CLUB,KIDS,PR,PRNOTE});
+    CLUB=j.club||CLUB;KIDS=j.kids||[];PRNOTE=(j.pr&&j.pr.note)||'';PRACAK=!!(j.pr&&j.pr.mode==='acak');TODAY=j.today||[];
+    store.set('ch_cache',{CLUB,KIDS,PRNOTE,PRACAK});
   }catch(err){
     const c=store.get('ch_cache',null);
     if(!c)return needPortal(id,'Tidak bisa terhubung. Cek internet lalu buka lagi ya.');
-    ({CLUB,KIDS,PR,PRNOTE}=c);TODAY=[];
+    ({CLUB,KIDS,PRNOTE,PRACAK}=c);TODAY=[];
   }
-  KID=KIDS.find(k=>String(k.id).toLowerCase()===id)||KIDS[0];
-  if(KID)store.set('ch_last',String(KID.id).toLowerCase());
+  setKid(KIDS.find(k=>String(k.id).toLowerCase()===id)||KIDS[0]);
   renderHome();show('home');flushQueue();
 }
 
@@ -898,43 +1050,56 @@ function renderCoach(){
   const ids=new Set(studs.map(s=>String(s.id)));
   const res=j.results.filter(r=>ids.has(String(r.sid)));
   const by=new Map();for(const r of res){if(!by.has(r.sid))by.set(r.sid,[]);by.get(r.sid).push(r);}
+  const prOfS=s=>(s.pr||[]).map(x=>x.k);
+  const kids=studs.filter(s=>by.has(s.id)).map(s=>{const it=by.get(s.id),pk=prOfS(s);const done=pk.filter(k=>it.some(r=>r.ex===k&&r.skor>=40)).length;return {...s,items:it,done,tot:pk.length};}).sort((a,b)=>a.n.localeCompare(b.n));
   const prK=(j.pr.items||[]).map(x=>x.k);
-  const kids=studs.filter(s=>by.has(s.id)).map(s=>{const it=by.get(s.id);const done=prK.filter(k=>it.some(r=>r.ex===k&&r.skor>=40)).length;return {...s,items:it,done};}).sort((a,b)=>a.n.localeCompare(b.n));
   const belum=studs.filter(s=>!by.has(s.id)).sort((a,b)=>a.n.localeCompare(b.n));
   COACH._view={kids,belum,prK};
-  $('#cOut').innerHTML=`<div class="sumrow"><div class="stat"><b style="color:var(--green)">${kids.length}</b><small>✅ Sudah latihan</small></div><div class="stat"><b style="color:#b45309">${belum.length}</b><small>⏳ Belum</small></div><div class="stat"><b>${prK.length?kids.filter(k=>k.done>=prK.length).length:'-'}</b><small>🏆 PR lengkap</small></div></div>`+
+  $('#cOut').innerHTML=`<div class="sumrow"><div class="stat"><b style="color:var(--green)">${kids.length}</b><small>✅ Sudah latihan</small></div><div class="stat"><b style="color:#b45309">${belum.length}</b><small>⏳ Belum</small></div><div class="stat"><b>${prK.length?kids.filter(k=>k.tot&&k.done>=k.tot).length:'-'}</b><small>🏆 PR lengkap</small></div></div>`+
     `<button class="btn wa" data-act="rekapWa">💬 Kirim rekap ke WA</button>`+
-    kids.map(kd=>`<div class="kid"><h4><span>${esc(kd.n)} <small class="mut">· ${esc(kd.unit)}</small></span>${prK.length?`<span class="tag" style="${kd.done<prK.length?'background:#fef3c7;color:#92400e':''}">PR ${kd.done}/${prK.length}${kd.done>=prK.length?' ✅':''}</span>`:''}</h4>`+
+    kids.map(kd=>`<div class="kid"><h4><span>${esc(kd.n)} <small class="mut">· ${esc(kd.unit)}</small></span>${kd.tot?`<span class="tag" style="${kd.done<kd.tot?'background:#fef3c7;color:#92400e':''}">PR ${kd.done}/${kd.tot}${kd.done>=kd.tot?' ✅':''}</span>`:''}</h4>${j.pr.mode==='acak'&&kd.pr?`<div class="mut" style="font-size:14px">🎲 PR: ${kd.pr.map(x=>EX[x.k]?EX[x.k].emoji+' '+EX[x.k].name:x.k).join(', ')}</div>`:''}`+
       kd.items.map(i=>`<div class="it">${EX[i.ex]?EX[i.ex].emoji:'🥋'} <b>${esc(i.exName)}</b> · ${esc(i.hasil)}<br>Skor <b>${i.skor}</b> ${'⭐'.repeat(i.bintang||0)} · jam ${fmtJam(i.ts)} ${i.foto?`<button class="btn sec small" data-act="foto" data-k="${esc(i.id)}">📷 Foto</button>`:''}<div class="ph"></div></div>`).join('')+`</div>`).join('')+
-    (belum.length?`<div class="card"><b>⏳ Belum latihan (${belum.length})</b><div class="belum">${belum.map(s=>`<span>${esc(s.n)}</span>`).join('')}</div></div>`:'');
+    (belum.length?`<div class="card"><b>⏳ Belum latihan (${belum.length})</b><div class="belum">${belum.map(s=>`<span title="${esc((s.pr||[]).map(x=>EX[x.k]?EX[x.k].name:x.k).join(', '))}">${esc(s.n)}${j.pr.mode==='acak'&&s.pr&&s.pr.length?' '+s.pr.map(x=>EX[x.k]?EX[x.k].emoji:'').join(''):''}</span>`).join('')}</div></div>`:'');
 }
 function renderPrEdit(){
-  const j=COACH,cur=new Map((j.pr.items||[]).map(x=>[x.k,x.t]));
-  const info=j.pr.updatedAt?`<p class="mut">Terakhir diubah ${new Date(j.pr.updatedAt).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}${j.pr.by?' oleh '+esc(j.pr.by):''}</p>`:'<p class="mut">Belum ada PR. Centang latihan di bawah lalu simpan.</p>';
-  $('#prEdit').innerHTML=info+Object.entries(EX).map(([k,e])=>`<div class="gen"><input type="checkbox" id="g_${k}" ${cur.has(k)?'checked':''} ${j.canEdit?'':'disabled'}><span>${e.emoji} ${esc(e.name)}<br><small class="mut">${e.cat==='kuat'?'💥 Kekuatan':'🌈 Kelenturan'} · ${unitOf(e)}</small></span><input type="number" id="gt_${k}" value="${cur.get(k)||e.def}" min="1" inputmode="numeric" ${j.canEdit?'':'disabled'}></div>`).join('')+
-    `<label>Pesan untuk anak (opsional)</label><textarea id="gNote" maxlength="300" ${j.canEdit?'':'disabled'} placeholder="Contoh: Latihan tiap hari ya, minimal 1x sehari!">${esc(j.pr.note||'')}</textarea>`+
-    (j.canEdit?`<button class="btn" data-act="savePr">💾 Simpan PR</button>`:'<p class="mut">Akun ini hanya bisa melihat PR.</p>')+
+  const j=COACH,pr=j.pr||{},cur=new Map((pr.items||[]).map(x=>[x.k,x.t])),dis=j.canEdit?'':'disabled',acak=pr.mode==='acak';
+  const info=pr.updatedAt?`<p class="mut">Terakhir diubah ${new Date(pr.updatedAt).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}${pr.by?' oleh '+esc(pr.by):''}</p>`:'<p class="mut">Belum ada PR. Atur di bawah lalu simpan.</p>';
+  const row=([k,e])=>`<div class="gen"><input type="checkbox" id="g_${k}" ${cur.has(k)?'checked':''} ${dis}><span>${e.emoji} ${esc(e.name)}<br><small class="mut">${unitOf(e)}</small></span><input type="number" id="gt_${k}" value="${cur.get(k)||e.def}" min="1" inputmode="numeric" ${dis}></div>`;
+  const ent=Object.entries(EX);
+  $('#prEdit').innerHTML=info+
+    `<label>Cara membagi PR</label><select id="gMode" ${dis}><option value="sama" ${acak?'':'selected'}>Sama untuk semua anak</option><option value="acak" ${acak?'selected':''}>🎲 Acak per anak (tiap anak beda)</option></select>`+
+    `<div id="gAcak" style="${acak?'':'display:none'}"><label>Tiap anak dapat berapa latihan?</label><select id="gN" ${dis}>${[1,2,3,4,5,6].map(n=>`<option ${n===(pr.n||3)?'selected':''}>${n}</option>`).join('')}</select>`+
+    `<label class="chk"><input type="checkbox" id="gHarian" ${pr.harian?'checked':''} ${dis}> Acak ulang setiap hari</label><p class="mut" style="margin-top:6px">Latihan dipilih acak dari yang dicentang, dicampur kekuatan & kelenturan.</p></div>`+
+    `<label style="margin-top:14px">💥 Kekuatan</label>`+ent.filter(([,e])=>e.cat==='kuat').map(row).join('')+
+    `<label style="margin-top:14px">🌈 Kelenturan</label>`+ent.filter(([,e])=>e.cat==='lentur').map(row).join('')+
+    (j.canEdit?`<button class="btn sec" data-act="pickAll">☑️ Centang semua</button>`:'')+
+    `<label>Pesan untuk anak (opsional)</label><textarea id="gNote" maxlength="300" ${dis} placeholder="Contoh: Latihan tiap hari ya, minimal 1x sehari!">${esc(pr.note||'')}</textarea>`+
+    (j.canEdit?`<button class="btn" data-act="savePr">💾 Simpan PR</button>${acak?'<button class="btn sec" data-act="reshuffle">🎲 Acak ulang sekarang</button>':''}`:'<p class="mut">Akun ini hanya bisa melihat PR.</p>')+
     `<button class="btn wa" data-act="announce">📢 Umumkan PR ke grup WA</button>`;
+  const m=$('#gMode');if(m)m.onchange=()=>{$('#gAcak').style.display=m.value==='acak'?'':'none';};
 }
-async function savePr(){
+async function savePr(_,reshuffle){
   const items=Object.keys(EX).filter(k=>$('#g_'+k).checked).map(k=>({k,t:Math.max(1,parseInt($('#gt_'+k).value)||EX[k].def)}));
-  const note=$('#gNote').value.trim();
+  const mode=$('#gMode').value,n=parseInt($('#gN').value)||3;
+  if(mode==='acak'&&items.length<2){alert('Untuk mode acak, centang minimal 2 latihan ya');return;}
   try{
-    const r=await fetch('/api/champion',{method:'POST',headers:{'content-type':'application/json',...staffHeaders()},body:JSON.stringify({action:'setpr',items,note})});
+    const r=await fetch('/api/champion',{method:'POST',headers:{'content-type':'application/json',...staffHeaders()},body:JSON.stringify({action:'setpr',items,note:$('#gNote').value.trim(),mode,n,harian:$('#gHarian').checked,reshuffle:!!reshuffle})});
     const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Gagal');
-    COACH.pr=j.pr;renderPrEdit();renderCoach();alert('PR tersimpan! Anak-anak langsung melihat PR baru di Champion.');
+    alert(reshuffle?'PR sudah diacak ulang!':'PR tersimpan! Anak-anak langsung melihat PR baru di Champion.');coachLoad();
   }catch(e){alert('Gagal menyimpan: '+e.message);}
 }
 function announce(){
-  const pr=COACH.pr.items||[];
-  if(!pr.length){alert('Simpan PR dulu ya');return;}
-  const msg=`📌 PR Champion${COACH.club&&COACH.club.name?' – '+COACH.club.name:''}\n${pr.map(x=>`${EX[x.k].emoji} ${EX[x.k].name}: ${targetTxt(EX[x.k],x.t)}`).join('\n')}${COACH.pr.note?'\n\n💬 '+COACH.pr.note:''}\n\nCara mengerjakan:\n1. Buka Portal Orang Tua anak (link dari pelatih)\n2. Tekan tombol 🏆 Champion\n3. Latihan di depan kamera HP, hasilnya otomatis ABSEN ✅\n\nSudah pernah buka? Langsung saja: ${location.origin}/champion`;
+  const pr=COACH.pr||{},items=pr.items||[];
+  if(!items.length){alert('Simpan PR dulu ya');return;}
+  const list=items.map(x=>`${EX[x.k].emoji} ${EX[x.k].name}: ${targetTxt(EX[x.k],x.t)}`).join('\n');
+  const head=pr.mode==='acak'?`🎲 Setiap anak dapat ${Math.min(pr.n||3,items.length)} latihan ACAK (beda-beda tiap anak${pr.harian?', berganti setiap hari':''}). Cek di Champion masing-masing ya!\n\nDaftar latihannya:\n`:'';
+  const msg=`📌 PR Champion${COACH.club&&COACH.club.name?' – '+COACH.club.name:''}\n${head}${list}${pr.note?'\n\n💬 '+pr.note:''}\n\nCara mengerjakan:\n1. Buka Portal Orang Tua anak (link dari pelatih)\n2. Tekan tombol 🏆 Champion\n3. Latihan di depan kamera HP, hasilnya otomatis ABSEN ✅\n\nSudah pernah buka? Langsung saja: ${location.origin}/champion`;
   location.href='https://wa.me/?text='+encodeURIComponent(msg);
 }
 function rekapWa(){
   const v=COACH._view,tgl=$('#cTgl').value||tglLokal();
   const txt=`📋 Absen PR Champion ${tgl}${$('#cUnit').value?' · Unit '+$('#cUnit').value:''}\n✅ Sudah: ${v.kids.length} · ⏳ Belum: ${v.belum.length}\n\n`+
-    v.kids.map((kd,n)=>`${n+1}. ${kd.n}${v.prK.length?` (PR ${kd.done}/${v.prK.length}${kd.done>=v.prK.length?' ✅':''})`:''}\n`+kd.items.map(i=>`   ${EX[i.ex]?EX[i.ex].emoji:''} ${i.exName}: ${i.skor} ${'⭐'.repeat(i.bintang||0)}`).join('\n')).join('\n')+
+    v.kids.map((kd,n)=>`${n+1}. ${kd.n}${kd.tot?` (PR ${kd.done}/${kd.tot}${kd.done>=kd.tot?' ✅':''})`:''}\n`+kd.items.map(i=>`   ${EX[i.ex]?EX[i.ex].emoji:''} ${i.exName}: ${i.skor} ${'⭐'.repeat(i.bintang||0)}`).join('\n')).join('\n')+
     (v.belum.length?`\n\n⏳ Belum latihan:\n${v.belum.map(s=>'- '+s.n).join('\n')}`:'');
   location.href='https://wa.me/?text='+encodeURIComponent(txt);
 }
@@ -952,9 +1117,9 @@ const ACTS={
   backSetup:()=>{stopRun();show('setup');},
   stop:()=>{if(S&&S.phase==='act'&&(S.activeT>2||S.reps.length)){say('Oke, selesai',true);finish();}else{stopRun();show('setup');}},
   again:()=>pick(cur),share,install,
-  kid:t=>{KID=KIDS.find(k=>String(k.id)===t.dataset.id)||KID;store.set('ch_last',String(KID.id).toLowerCase());renderHome();},
+  kid:t=>{setKid(KIDS.find(k=>String(k.id)===t.dataset.id)||KID);renderHome();},
   voice:()=>{voiceOn=!voiceOn;store.set('ch_voice',voiceOn);$('#vBtn').textContent=voiceOn?'🔊':'🔇';if(!voiceOn)try{speechSynthesis.cancel()}catch(e){}},
-  coachLoad,savePr,announce,rekapWa,foto:loadFoto
+  coachLoad,savePr:()=>savePr(null,false),reshuffle:()=>{if(confirm('Acak ulang PR semua anak?'))savePr(null,true);},pickAll:()=>{Object.keys(EX).forEach(k=>{const c=$('#g_'+k);if(c)c.checked=true;});},announce,rekapWa,foto:loadFoto
 };
 document.addEventListener('click',ev=>{const t=ev.target.closest('[data-act]');if(t&&ACTS[t.dataset.act])ACTS[t.dataset.act](t);});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&running&&S&&S.phase!=='act'){stopRun();show('setup');}});
