@@ -80,10 +80,12 @@ export async function onRequestPost({ request, env }) {
   const students = (await clubRows(env, st.clubId, ["students"])).map(r => ({ id: r.id, ...r.d }));
   const fk = famKey(st);
   const family = fk ? students.filter(s => s.id === st.id || famKey(s) === fk) : [st];
-  if (!family.some(s => nameMatches(typed, s.n))) return WRONG;
+  // body.self: akses murid langsung (Champion) — nama harus cocok dengan murid itu sendiri, token hanya untuk dia (tanpa saudara)
+  const self = body.self === true;
+  if (!(self ? nameMatches(typed, st.n) : family.some(s => nameMatches(typed, s.n)))) return WRONG;
   const { blocked } = await clubOf(env, st.clubId);
   if (blocked) return Response.json({ error: "Portal dojang ini sedang tidak aktif." }, { status: 402 });
-  return Response.json({ ok: true, token: await makeToken(env, family.map(s => String(s.id)), st.clubId), ids: family.map(s => String(s.id)) }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({ ok: true, token: await makeToken(env, (self ? [st] : family).map(s => String(s.id)), st.clubId), ids: (self ? [st] : family).map(s => String(s.id)) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 // Portal orang tua: GET /api/portal?id=<id murid>
