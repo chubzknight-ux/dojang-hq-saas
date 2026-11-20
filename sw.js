@@ -1,9 +1,10 @@
 // Dojang HQ service worker
 // - Halaman (index.html): ambil dari jaringan dulu; bila sinyal lambat (>3,5 dtk) atau offline, pakai salinan tersimpan.
 //   Semua tautan (?portal=..., ?pelatih=1, dst.) memakai SATU salinan index.html, jadi cache tidak membengkak.
+// - Champion (/champion) punya salinan sendiri.
 // - Ikon & font: dari cache dulu (jarang berubah), diperbarui diam-diam di belakang.
 // - /api/ tidak pernah di-cache (data selalu langsung dari server).
-const CACHE = "dojang-v2";
+const CACHE = "dojang-v3";
 const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
 
@@ -27,11 +28,11 @@ const put = (key, res) => {
   return res;
 };
 
-function pageFirst(req) {
-  const net = fetch(req).then(r => put("/", r));
+function pageFirst(req, key = "/") {
+  const net = fetch(req).then(r => put(key, r));
   const timeout = new Promise(res => setTimeout(res, 3500));
   return Promise.race([net.catch(() => null), timeout]).then(r =>
-    r || caches.match("/").then(c => c || net)
+    r || caches.match(key).then(c => c || net)
   );
 }
 
@@ -50,6 +51,11 @@ self.addEventListener("fetch", e => {
 
   if (u.origin === self.location.origin) {
     if (u.pathname.startsWith("/api/")) return;
+    // Champion (PWA sendiri): salinan halamannya disimpan terpisah, tidak menimpa salinan index.html
+    if (u.pathname === "/champion" || u.pathname === "/champion.html") {
+      e.respondWith(pageFirst(req, "/champion"));
+      return;
+    }
     if (req.mode === "navigate" || u.pathname === "/" || u.pathname === "/index.html") {
       e.respondWith(pageFirst(req));
       return;

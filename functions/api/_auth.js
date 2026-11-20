@@ -175,7 +175,7 @@ export const logicalId = (coll, id) => {
   return NS.has(coll) && s.includes("@") ? s.slice(s.indexOf("@") + 1) : s;
 };
 // Koleksi yang tidak boleh diubah lewat API umum (punya jalur khusus dan berisi kata sandi / catatan internal)
-export const PROTECTED = new Set(["staff", "staff_rl", "clubs", "audit_log"]);
+export const PROTECTED = new Set(["staff", "staff_rl", "clubs", "audit_log", "champion", "champion_foto", "champion_pr"]);
 
 // Baca satu dokumen klub: versi berawalan dulu, lalu versi lama bila memang milik klub ini
 export async function getDoc(env, clubId, coll, id) {
@@ -215,7 +215,9 @@ export async function clubRows(env, clubId, colls) {
     const ph = colls.map(() => "?").join(",");
     rs = await env.DB.prepare(`SELECT coll,id,data FROM docs WHERE json_extract(data,'$.clubId')=? AND coll IN (${ph})`).bind(clubId, ...colls).all();
   } else {
-    rs = await env.DB.prepare("SELECT coll,id,data FROM docs WHERE json_extract(data,'$.clubId')=?").bind(clubId).all();
+    // koleksi PROTECTED (termasuk hasil & foto Champion) tidak ikut dibaca, supaya sinkron tetap ringan
+    const skip = [...PROTECTED];
+    rs = await env.DB.prepare(`SELECT coll,id,data FROM docs WHERE json_extract(data,'$.clubId')=? AND coll NOT IN (${skip.map(() => "?").join(",")})`).bind(clubId, ...skip).all();
   }
   const map = new Map();
   for (const r of rs.results) {

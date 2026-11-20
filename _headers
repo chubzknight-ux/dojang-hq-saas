@@ -18,3 +18,9 @@
   Cache-Control: public, max-age=604800
 /icon-512.png
   Cache-Control: public, max-age=604800
+/champion
+  Cache-Control: no-cache
+/champion.html
+  Cache-Control: no-cache
+/champion.webmanifest
+  Cache-Control: public, max-age=86400
