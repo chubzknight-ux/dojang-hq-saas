@@ -9,7 +9,7 @@ export async function onRequestPost({ env, request }) {
   const user = String((b && b.user) || "").trim().toLowerCase();
   const pin = String((b && b.pin) || "").trim();
   const a = await passwordAuth(env, request, user, pin, cleanSlug((b && b.targetClub) || ""));
-  if (!a.ok) return J({ error: a.error }, a.status);
+  if (!a.ok) return J({ error: a.error, payClub: a.payClub || "" }, a.status);
   const t = a.tokenInfo;
   return J({ token: await makeAdminToken(env, t.role, t.user, t.clubId, t.pv), role: a.role });
 }

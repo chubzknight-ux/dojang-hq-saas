@@ -98,7 +98,7 @@ async function tokenAuth(env, token, targetClub) {
     const c = JSON.parse(row.data);
     if (p.pv !== (await clubPv(c))) return expired;
     const blocked = clubBlocked(c);
-    if (blocked) return { ok: false, status: 402, error: blocked };
+    if (blocked) return { ok: false, status: 402, error: blocked, payClub: row.id };
     return { ok: true, role: "club", clubId: row.id, club: { id: row.id, ...stripSecrets(c) } };
   } catch (e) { return expired; }
 }
@@ -146,7 +146,7 @@ export async function passwordAuth(env, req, user, pin, targetClub) {
     }
     if (!good) continue;
     const blocked = clubBlocked(c);
-    if (blocked) return { ok: false, status: 402, error: blocked };
+    if (blocked) return { ok: false, status: 402, error: blocked, payClub: r.id };
     return { ok: true, role: "club", clubId: r.id, club: { id: r.id, ...stripSecrets(c) }, tokenInfo: { role: "club", user: cUser, clubId: r.id, pv: await clubPv(c) } };
   }
 
@@ -175,7 +175,7 @@ export const logicalId = (coll, id) => {
   return NS.has(coll) && s.includes("@") ? s.slice(s.indexOf("@") + 1) : s;
 };
 // Koleksi yang tidak boleh diubah lewat API umum (punya jalur khusus dan berisi kata sandi / catatan internal)
-export const PROTECTED = new Set(["staff", "staff_rl", "clubs", "audit_log", "champion", "champion_foto", "champion_pr"]);
+export const PROTECTED = new Set(["staff", "staff_rl", "clubs", "audit_log", "champion", "champion_foto", "champion_pr", "invoices", "billing_settings", "ai_usage"]);
 
 // Baca satu dokumen klub: versi berawalan dulu, lalu versi lama bila memang milik klub ini
 export async function getDoc(env, clubId, coll, id) {

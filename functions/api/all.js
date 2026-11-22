@@ -6,7 +6,7 @@ import { jsonEtag } from "./staff.js";
 // server cukup membalas 304 (tanpa isi) dan HP tidak mengunduh ulang semua data + logo.
 export async function onRequestGet({ env, request }) {
   const auth = await authenticate(env, request);
-  if (!auth.ok) return J({ error: auth.error }, auth.status);
+  if (!auth.ok) return J({ error: auth.error, payClub: auth.payClub || "" }, auth.status);
 
   if (auth.role === "superadmin" && !auth.clubId) {
     const clubs = [];
