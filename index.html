@@ -518,7 +518,120 @@ function renderParentCoachReviewForm(cRec,prefillParent,prefillStudent,savedMsg)
   return `<div class="sec" id="parentCoachEvalBox" style="border-top:4px solid #F2B600"><h2>✍️ ${T("Berikan Evaluasi & Masukan untuk","Submit Evaluation & Feedback for")} ${esc(cRec.name)}</h2><p class="mu" style="margin:0 0 14px">${T("Penilaian dan saran Anda membantu meningkatkan kualitas pengajaran di "+CNE()+". Klik angka 1 (Kurang) sampai 5 (Sangat Baik).","Your evaluation and feedback help improve coaching quality at "+CNE()+". Click 1 (Needs Work) to 5 (Excellent).")}</p><div class="f" style="margin-bottom:14px"><div><label>${T("Nama Orang Tua / Wali","Parent / Guardian Name")}</label><input id="pe_parent" type="text" placeholder="${T("Contoh: Ibu Rina / Orang Tua Murid","Example: Mrs. Rina / Student Parent")}" value="${esc(draft.parentName)}"></div><div><label>${T("Nama Murid (opsional)","Student Name (optional)")}</label><input id="pe_student" type="text" placeholder="${T("Contoh: Alya Putri","Example: Alya Putri")}" value="${esc(draft.studentName)}"></div></div>${criteria.map(([k,title,sub])=>{const curVal=Number(draft[k])||5;return`<div class="star-row"><div><b>${title}</b><br><span class="mu" style="font-size:12.5px">${sub}</span></div><div class="star-btns" role="group" aria-label="${title}">${[1,2,3,4,5].map(n=>`<button type="button" class="star-btn ${n<=curVal?"on":""}" data-pstar="${k}" data-val="${n}">${n}</button>`).join("")}</div></div>`;}).join("")}<div style="margin-top:14px"><label>${T("Saran, Masukan, atau Apresiasi untuk Pelatih","Suggestions, Feedback, or Appreciation for Coach")}</label><textarea id="pe_comment" rows="3" placeholder="${T("Tulis masukan cara mengajar, komunikasi dengan anak, atau hal yang sudah sangat baik...","Write feedback on teaching style, communication with kids, or strengths...")}">${esc(draft.comment)}</textarea></div>${savedMsg?`<div class="note" style="margin-top:12px">✓ ${esc(savedMsg)}</div>`:""}<p style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn" data-pa="submitParentCoachEval" data-cid="${esc(cRec.id)}" data-cname="${esc(cRec.name)}">📩 ${T("Kirim Evaluasi Orang Tua","Submit Parent Evaluation")}</button></p></div>`;
 }
 
-if(portalId){
+// ===== Pembayaran langganan (halaman publik ?bayar=1&club=KODE dan menu Langganan) =====
+function payUi(root,clubId,opts){
+  opts=opts||{};
+  const S={info:null,plan:"",months:1,method:"",name:"",busy:false,err:"",inv:opts.inv||"",paid:null,view:null,polls:0};
+  const api=q=>"/api/billing?"+q;
+  const post=async b=>{const r=await fetch("/api/billing",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||("HTTP "+r.status));return d};
+  const price=(pl,m)=>{const d=Math.min(90,Math.max(0,Number(S.info.discounts[String(m)])||0));return Math.max(1000,Math.round(pl.price*m*(100-d)/100/1000)*1000)};
+  const perMonth=(pl,m)=>Math.round(price(pl,m)/m/1000)*1000;
+  async function load(){
+    try{
+      const r=await fetch(api("club="+encodeURIComponent(clubId)),{cache:"no-store"});const d=await r.json().catch(()=>({}));
+      if(!r.ok){S.err=d.error||T("Gagal memuat data pembayaran.","Could not load payment data.");S.info=null}
+      else{
+        S.info=d;S.err="";
+        if(!d.plans.find(p=>p.id===S.plan)){const cur=String(d.club.plan||"").toLowerCase();const m=d.plans.find(p=>p.id===cur||p.name.toLowerCase()===cur);S.plan=(m||d.plans[0]||{}).id||""}
+        if(!S.method)S.method=d.gateway?"gateway":(d.manual?"manual":"");
+      }
+    }catch(e){S.err=T("Tidak ada koneksi internet. Coba lagi.","No internet connection. Try again.")}
+    draw();
+  }
+  async function checkInv(){
+    if(!S.inv)return;
+    try{
+      const r=await fetch(api("invoice="+encodeURIComponent(S.inv)),{cache:"no-store"});const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.invoice){
+        if(d.invoice.status==="paid"){S.paid=d.invoice;S.inv="";await load();return}
+        if(d.invoice.status==="pending"&&S.polls++<30){setTimeout(checkInv,4000);S.checking=true;draw();return}
+        S.checking=false;S.inv=""; if(d.invoice.status==="expired")S.err=T("Tagihan kedaluwarsa. Silakan buat tagihan baru.","The invoice expired. Please create a new one.");
+      }
+    }catch(e){}
+    draw();
+  }
+  const copyBtn=(txt,label)=>`<button type="button" class="btn ghost" data-a="copy" data-t="${esc(txt)}" style="padding:5px 10px;font-size:12.5px">${label||T("Salin","Copy")}</button>`;
+  function manualBox(iv){
+    const m=S.info.manual||{},b=m.bank||{};
+    const total=iv.total||iv.amount;
+    return `<div class="sec" style="border-top:4px solid #F2B600"><h2>🏦 ${T("Transfer Manual","Manual Transfer")}</h2>
+      <p class="mu" style="margin:0 0 10px">${T("Transfer tepat sesuai nominal di bawah (termasuk 3 angka unik di belakang) supaya mudah dicocokkan.","Transfer the exact amount below (including the 3 unique digits) so we can match it.")}</p>
+      <div style="font-size:30px;font-weight:800;letter-spacing:.3px;margin:6px 0 2px">${rp(total)}</div>
+      <div style="margin-bottom:12px">${copyBtn(String(total),T("Salin nominal","Copy amount"))}</div>
+      ${b.number?`<div class="row" style="flex-wrap:wrap;gap:10px"><div><b>${esc(b.bank||"Bank")}</b> · <span style="font-size:18px;font-weight:700">${esc(b.number)}</span><br><span class="mu">a.n. ${esc(b.holder||"-")}</span></div>${copyBtn(b.number,T("Salin no. rekening","Copy account no."))}</div>`:""}
+      ${m.qrisImage?`<div style="text-align:center;margin:12px 0"><img src="${m.qrisImage}" alt="QRIS" style="max-width:280px;width:100%;border:1px solid var(--ln);border-radius:10px;background:#fff;padding:8px"><div class="mu" style="font-size:12.5px">${T("Scan dengan aplikasi bank / e-wallet apa pun","Scan with any banking / e-wallet app")}</div></div>`:""}
+      ${iv.claimed?`<p style="margin:12px 0 0"><span class="pill leave">⏳ ${T("Menunggu konfirmasi pengelola","Waiting for confirmation")}</span><br><span class="mu" style="font-size:13px">${T("Masa aktif otomatis diperpanjang setelah pembayaran dikonfirmasi.","Your subscription is extended once the payment is confirmed.")}</span></p>`
+        :`<div style="margin-top:14px"><label>${T("Nama pengirim / catatan (opsional)","Sender name / note (optional)")}</label><input id="pay_note" type="text" maxlength="100" placeholder="${T("Contoh: a.n. Budi","e.g. from Budi")}"><button type="button" class="btn" data-a="claim" data-id="${esc(iv.id)}" style="margin-top:10px">✅ ${T("Saya sudah transfer","I have transferred")}</button></div>`}
+      ${S.info.contactWa?`<p style="margin:12px 0 0"><a href="https://wa.me/${esc(S.info.contactWa)}?text=${encodeURIComponent("Halo, saya sudah transfer langganan Dojang HQ untuk "+S.info.club.name+" sebesar "+rp(total)+" (tagihan "+iv.id+"). Mohon dikonfirmasi. Terima kasih.")}" target="_blank" rel="noopener" class="btn ghost">💬 ${T("Kirim bukti via WhatsApp","Send proof via WhatsApp")}</a></p>`:""}
+    </div>`;
+  }
+  function draw(){
+    if(!root.isConnected)return;
+    const I=S.info;
+    if(!I){root.innerHTML=`<div class="sec" style="max-width:560px;margin:30px auto"><h2>💳 ${T("Pembayaran Langganan","Subscription Payment")}</h2><p class="mu">${S.err?esc(S.err):T("Memuat…","Loading…")}</p>${S.err?`<button class="btn" data-a="retry">${T("Coba lagi","Retry")}</button>`:""}</div>`;return}
+    const c=I.club,today=I.today;
+    const expired=c.status==="suspended"||(c.expiresAt&&c.expiresAt<today);
+    const badge=expired?`<span class="pill warn">${c.status==="suspended"?T("Ditangguhkan","Suspended"):T("Berakhir ","Expired ")+esc(c.expiresAt)}</span>`:`<span class="pill ok">${T("Aktif s/d ","Active until ")}${esc(c.expiresAt||"∞")}</span>`;
+    const pl=I.plans.find(p=>p.id===S.plan);
+    let h=`<div style="max-width:620px;margin:0 auto">`;
+    h+=`<div class="sec" style="display:flex;gap:12px;align-items:center;margin-bottom:16px">${c.logo?`<img src="${c.logo}" alt="" style="width:52px;height:52px;border-radius:50%;object-fit:contain;border:1px solid var(--ln);background:#fff;padding:3px">`:""}<div><h2 style="margin:0">💳 ${T("Langganan","Subscription")} · ${esc(c.name)}</h2><div style="margin-top:4px">${badge} ${c.plan?`<span class="pill">${esc(c.plan)}</span>`:""}</div></div></div>`;
+    if(S.paid)h+=`<div class="sec" style="border-top:4px solid var(--ok)"><h2>✅ ${T("Pembayaran diterima!","Payment received!")}</h2><p style="margin:0 0 6px">${T("Terima kasih. Masa aktif Dojang HQ kini sampai","Thank you. Your Dojang HQ is now active until")} <b>${esc(c.expiresAt)}</b>.</p><a class="btn" href="/?club=${encodeURIComponent(c.id)}">🚪 ${T("Masuk ke aplikasi","Open the app")}</a></div>`;
+    else if(S.checking)h+=`<div class="sec" style="border-top:4px solid #F2B600"><h2>⏳ ${T("Memeriksa pembayaran…","Checking payment…")}</h2><p class="mu" style="margin:0">${T("Halaman ini otomatis berubah setelah pembayaran terdeteksi (bisa sampai 1–2 menit).","This page updates automatically once the payment is detected (may take 1–2 minutes).")}</p></div>`;
+    if(S.err)h+=`<div class="sec" style="color:var(--rd);font-weight:600">${esc(S.err)}</div>`;
+    const pend=I.pending||(S.localInv&&S.localInv.status==="pending"?S.localInv:null);
+    if(pend&&pend.method==="manual")h+=manualBox(pend);
+    else if(pend&&pend.method==="gateway"&&pend.url)h+=`<div class="sec" style="border-top:4px solid #F2B600"><h2>🧾 ${T("Tagihan menunggu pembayaran","Invoice awaiting payment")}</h2><p style="margin:0 0 10px">${esc(pend.months)} ${T("bulan","months")} · <b>${rp(pend.amount)}</b></p><a class="btn" href="${esc(pend.url)}">💳 ${T("Lanjutkan pembayaran","Continue payment")}</a></div>`;
+    if(!I.plans.length||(!I.gateway&&!I.manual)){
+      h+=`<div class="sec"><h2>${T("Pembayaran belum tersedia","Payments not available yet")}</h2><p class="mu">${T("Pengelola belum mengatur paket atau cara bayar. Silakan hubungi pengelola Dojang HQ untuk perpanjang.","The provider has not set up plans or payment methods yet. Please contact the Dojang HQ provider to renew.")}</p>${I.contactWa?`<a class="btn" target="_blank" rel="noopener" href="https://wa.me/${esc(I.contactWa)}?text=${encodeURIComponent("Halo, saya ingin memperpanjang langganan Dojang HQ untuk "+c.name)}">💬 WhatsApp</a>`:""}</div>`;
+    }else{
+      h+=`<div class="sec"><h2>1️⃣ ${T("Pilih paket","Choose a plan")}</h2><div style="display:grid;gap:8px">${I.plans.map(p=>`<label class="row" style="cursor:pointer;border:2px solid ${p.id===S.plan?"var(--bl)":"var(--ln)"};border-radius:10px;padding:10px 12px;gap:10px;align-items:center"><input type="radio" name="pay_plan" value="${esc(p.id)}" ${p.id===S.plan?"checked":""} style="width:auto"><div style="flex:1"><b>${esc(p.name)}</b>${p.note?`<br><span class="mu" style="font-size:13px">${esc(p.note)}</span>`:""}</div><div style="text-align:right"><b>${rp(p.price)}</b><br><span class="mu" style="font-size:12px">/${T("bulan","month")}</span></div></label>`).join("")}</div></div>`;
+      h+=`<div class="sec"><h2>2️⃣ ${T("Pilih durasi","Choose duration")}</h2><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">${I.durations.map(m=>{const d=Number(I.discounts[String(m)])||0;return `<button type="button" data-a="months" data-m="${m}" class="row" style="all:unset;cursor:pointer;text-align:center;border:2px solid ${m===S.months?"var(--bl)":"var(--ln)"};border-radius:10px;padding:10px 6px;box-sizing:border-box;background:${m===S.months?"var(--tint)":"transparent"}"><b>${m} ${T("bulan","mo")}</b>${d?`<br><span class="pill ok">${T("Hemat","Save")} ${d}%</span>`:""}${pl?`<br><span class="mu" style="font-size:12.5px">${rp(price(pl,m))}</span>`:""}</button>`}).join("")}</div></div>`;
+      h+=`<div class="sec"><h2>3️⃣ ${T("Cara bayar","Payment method")}</h2><div style="display:grid;gap:8px">${I.gateway?`<label class="row" style="cursor:pointer;border:2px solid ${S.method==="gateway"?"var(--bl)":"var(--ln)"};border-radius:10px;padding:10px 12px;gap:10px;align-items:center"><input type="radio" name="pay_m" value="gateway" ${S.method==="gateway"?"checked":""} style="width:auto"><div><b>⚡ ${T("Bayar online","Pay online")}</b><br><span class="mu" style="font-size:13px">QRIS, Virtual Account (BCA, Mandiri, BNI, BRI…), GoPay/OVO/DANA/ShopeePay, ${T("minimarket","convenience store")} · ${T("otomatis aktif","instantly active")}</span></div></label>`:""}${I.manual?`<label class="row" style="cursor:pointer;border:2px solid ${S.method==="manual"?"var(--bl)":"var(--ln)"};border-radius:10px;padding:10px 12px;gap:10px;align-items:center"><input type="radio" name="pay_m" value="manual" ${S.method==="manual"?"checked":""} style="width:auto"><div><b>🏦 ${T("Transfer manual","Manual transfer")}</b><br><span class="mu" style="font-size:13px">${T("Transfer bank / QRIS, lalu konfirmasi. Aktif setelah dicek pengelola.","Bank transfer / QRIS, then confirm. Active once the provider checks it.")}</span></div></label>`:""}</div>
+        <div style="margin-top:12px"><label>${T("Nama pembayar (opsional)","Payer name (optional)")}</label><input id="pay_name" type="text" maxlength="60" value="${esc(S.name)}" placeholder="${T("Nama Anda","Your name")}"></div></div>`;
+      h+=`<div class="sec" style="position:sticky;bottom:8px"><div class="row" style="gap:12px;flex-wrap:wrap;align-items:center;background:var(--sf);border:1px solid var(--ln);border-radius:12px;padding:12px 14px;box-shadow:var(--sh)"><div style="flex:1 1 150px"><span class="mu" style="font-size:12.5px">${T("Total bayar","Total")}</span><div style="font-size:24px;font-weight:800">${pl?rp(price(pl,S.months)):"-"}</div>${pl&&S.months>1?`<span class="mu" style="font-size:12px">≈ ${rp(perMonth(pl,S.months))}/${T("bulan","month")}</span>`:""}${c.expiresAt&&!expired&&pl?`<div class="mu" style="font-size:12px">${T("Perpanjangan menyambung dari ","Extends from ")}${esc(c.expiresAt)}</div>`:""}</div><button type="button" class="btn" data-a="pay" ${S.busy||!pl||!S.method?"disabled":""} style="padding:12px 20px;font-size:16px">${S.busy?T("Memproses…","Processing…"):(S.method==="manual"?"🏦 "+T("Buat tagihan transfer","Create transfer invoice"):"💳 "+T("Bayar sekarang","Pay now"))}</button></div></div>`;
+    }
+    if(I.history&&I.history.length)h+=`<div class="sec"><h2>🧾 ${T("Riwayat pembayaran","Payment history")}</h2>${I.history.map(x=>`<div class="row" style="justify-content:space-between"><span>${x.paidAt?esc(new Date(x.paidAt+7*3600e3).toISOString().slice(0,10)):""} · ${esc(x.months)} ${T("bulan","months")}</span><b>${rp(x.amount)}</b></div>`).join("")}</div>`;
+    h+=`</div>`;
+    root.innerHTML=h;
+  }
+  root.onclick=async e=>{
+    const b=e.target.closest("[data-a]");if(!b)return;
+    const a=b.dataset.a;
+    if(a==="retry")return load();
+    if(a==="months"){S.months=Number(b.dataset.m)||1;return draw()}
+    if(a==="copy"){try{await navigator.clipboard.writeText(b.dataset.t);toast(T("Disalin","Copied"))}catch(x){toast(b.dataset.t)}return}
+    if(a==="claim"){
+      const note=(document.getElementById("pay_note")||{}).value||"";
+      try{await post({action:"claim",invoice:b.dataset.id,note});toast(T("Terima kasih! Menunggu konfirmasi.","Thanks! Waiting for confirmation."));await load()}catch(x){S.err=x.message;draw()}
+      return;
+    }
+    if(a==="pay"){
+      if(S.busy)return;
+      S.busy=true;S.err="";S.name=(document.getElementById("pay_name")||{}).value||S.name;draw();
+      try{
+        const d=await post({action:"create",club:clubId,plan:S.plan,months:S.months,method:S.method,name:S.name});
+        if(S.method==="gateway"&&d.invoice.url){location.href=d.invoice.url;return}
+        S.localInv=d.invoice;S.busy=false;await load();window.scrollTo({top:0,behavior:"smooth"});return;
+      }catch(x){S.err=x.message}
+      S.busy=false;draw();
+    }
+  };
+  root.onchange=e=>{
+    const t=e.target;
+    if(t.name==="pay_plan"){S.plan=t.value;draw()}
+    else if(t.name==="pay_m"){S.method=t.value;draw()}
+    else if(t.id==="pay_name")S.name=t.value;
+  };
+  load().then(()=>{if(S.inv)checkInv()});
+}
+
+if(params.has("bayar")){
+  document.body.classList.add("standalone-portal");
+  const pc=(params.get("club")||CLUB_ID||"").trim().toLowerCase().replace(/[^a-z0-9_-]/g,"");
+  $("#app").innerHTML=`${langBarHtml()}<div id="payMount"></div>`;
+  if(!pc)$("#payMount").innerHTML=`<div class="sec" style="max-width:520px;margin:30px auto"><h2>💳 ${T("Pembayaran Langganan","Subscription Payment")}</h2><p class="mu">${T("Kode dojang tidak ada di tautan. Minta tautan pembayaran dari pengelola, atau buka lewat tombol Bayar di layar masuk.","The dojang code is missing from the link. Ask the provider for the payment link.")}</p></div>`;
+  else payUi($("#payMount"),pc,{inv:(params.get("inv")||"").trim()});
+} else if(portalId){
   document.body.classList.add("standalone-portal");
   const ymNow=ymd().slice(0,7);
   let portalData=null,pubCoachBundle=null,portalCoachId="",portalEvalDoneMsg="";
@@ -836,7 +949,7 @@ if(portalId){
     const u=__user,p=__pin;__pin="";localStorage.removeItem("dojang_pin");
     let r,d={};
     try{r=await fetch("/api/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({user:u,pin:p})});d=await r.json().catch(()=>({}));}catch(e){throw e}
-    if(!r.ok||!d.token){gateErr=d.error||T("Gagal masuk.","Sign-in failed.");showPin(true);return false}
+    window.__payClub=d.payClub||"";if(!r.ok||!d.token){gateErr=d.error||T("Gagal masuk.","Sign-in failed.");showPin(true);return false}
     __atok=d.token;localStorage.setItem("dojang_atok",d.token);window.__etagA="";return true;
   }
   let __cache={},__subs=[],__rawStudents=[];
@@ -852,7 +965,7 @@ if(portalId){
     if(nm){nm.style.display=rg?"block":"none";nm.placeholder=T("Nama lengkap (mis. Sabeum Andi)","Full name (e.g. Coach Andi)");}
     if(usr){usr.style.display="block";usr.placeholder=T("Nama pengguna","Username");}
     if(inp){inp.placeholder=ad?T("PIN / kata sandi admin...","Admin PIN / passphrase..."):T("Kata sandi...","Password...");inp.setAttribute("inputmode","text");inp.style.letterSpacing="0";}
-    if(err)err.textContent=gateErr||(ad?T("Username atau PIN salah.","Wrong username or PIN."):T("Data masuk salah.","Wrong sign-in details."));
+    if(err){err.textContent=gateErr||(ad?T("Username atau PIN salah.","Wrong username or PIN."):T("Data masuk salah.","Wrong sign-in details."));if(window.__payClub&&gateErr){const pa=document.createElement("a");pa.href="/?bayar=1&club="+encodeURIComponent(window.__payClub);pa.textContent="👉 "+T("Bayar / perpanjang sekarang","Pay / renew now");pa.style.cssText="display:block;margin-top:8px;font-weight:700;color:inherit;text-decoration:underline";err.appendChild(pa);}}
     if(btn)btn.textContent=rg?T("Kirim pendaftaran","Submit registration"):T("Masuk ke Dojang HQ","Sign in to Dojang HQ");
     if(rt){rt.style.display=ad?"none":"block";rt.textContent=rg?T("Sudah punya akun? Masuk","Have an account? Sign in"):T("Belum punya akun? Daftar sebagai pelatih","No account yet? Register as a coach");}
     document.querySelectorAll("#gateTabs [data-gate]").forEach(b=>{const on=b.dataset.gate==="admin"?ad:!ad;b.className=on?"btn":"btn ghost";b.textContent=b.dataset.gate==="admin"?T("Kepala Pelatih / Admin","Head Coach / Admin"):T("Pelatih","Coach");});
@@ -895,7 +1008,7 @@ if(portalId){
       if(r.status===401||r.status===403||r.status===402||r.status===429){
         window.__etagA="";
         if(r.status===401||r.status===403){localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_atok");__pin="";__atok="";}
-        gateErr=body.error||"";showPin(true);return;
+        window.__payClub=body.payClub||"";gateErr=body.error||"";showPin(true);return;
       }
       if(!r.ok)throw new Error(r.status);
       hidePin();gateErr="";
@@ -903,11 +1016,11 @@ if(portalId){
       if(__role==="superadmin"&&!body.club){
         __club=null;__saClubs=body.clubs||[];__saCounts=body.counts||{};__cache={};
         window.__CLUB_NAME="";window.__HEAD="";window.__LOGO_DATA__="";
-        if(cur!=="sa"&&cur!=="upd")cur="sa";
+        if(cur!=="sa"&&cur!=="upd"&&cur!=="pay")cur="sa";
       }else{
         __club=body.club||{id:"default",name:"Dojang HQ",headCoach:"Kepala Pelatih",logo:""};
         __cache=body.data||{};
-        if(cur==="sa"||cur==="upd")cur="dash";
+        if(cur==="sa"||cur==="upd"||cur==="pay")cur="dash";
         const lg=(__cache.settings||[]).find(x=>x.id==="logo");
         setClubCtx(__club,lg&&typeof lg.data==="string"&&lg.data?lg.data:(__club.logo||""));
       }
@@ -1121,20 +1234,20 @@ if(portalId){
   };
   function buildNav(){
     if(__role==="superadmin"&&!__club){
-      document.querySelector("nav").innerHTML=`<div class="brand"><div>Dojang HQ<small>👑 Super Admin</small></div></div><button data-v="sa">🏢 ${T("Kelola Dojang Klien","Client Dojangs")}</button><button data-v="upd">🚀 ${T("Update App (Semua Klien)","Update App (All Clients)")}</button><button id="logoutBtn" style="margin-top:auto;opacity:.8">🔒 ${T("Keluar","Sign Out")}</button>`;
-      const mb=document.getElementById("mbar");if(mb)mb.innerHTML=`<button type="button" data-v="sa"><span aria-hidden="true">🏢</span><small>${T("Klien","Clients")}</small></button><button type="button" data-v="upd"><span aria-hidden="true">🚀</span><small>Update</small></button><button type="button" id="mMore" aria-controls="mainNav"><span aria-hidden="true">☰</span><small>${T("Lainnya","More")}</small></button>`;
+      document.querySelector("nav").innerHTML=`<div class="brand"><div>Dojang HQ<small>👑 Super Admin</small></div></div><button data-v="sa">🏢 ${T("Kelola Dojang Klien","Client Dojangs")}</button><button data-v="pay">💰 ${T("Pembayaran","Payments")}</button><button data-v="upd">🚀 ${T("Update App (Semua Klien)","Update App (All Clients)")}</button><button id="logoutBtn" style="margin-top:auto;opacity:.8">🔒 ${T("Keluar","Sign Out")}</button>`;
+      const mb=document.getElementById("mbar");if(mb)mb.innerHTML=`<button type="button" data-v="sa"><span aria-hidden="true">🏢</span><small>${T("Klien","Clients")}</small></button><button type="button" data-v="pay"><span aria-hidden="true">💰</span><small>${T("Bayar","Pay")}</small></button><button type="button" data-v="upd"><span aria-hidden="true">🚀</span><small>Update</small></button><button type="button" id="mMore" aria-controls="mainNav"><span aria-hidden="true">☰</span><small>${T("Lainnya","More")}</small></button>`;
       document.getElementById("logoutBtn").onclick=()=>{localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_atok");localStorage.removeItem("dojang_token");localStorage.removeItem("dojang_target_club");__pin="";__atok="";__tok="";__targetClub="";location.reload()};
       FT.length=0;
       return;
     }
     const lu=getLogoUri();
-    const NV=[["dash","🥋 "+T("Dashboard","Dashboard")],["mur","👥 "+T("Murid","Students")],["pel","🎖️ "+T("Pelatih","Coaches")],["abs","✅ "+T("Absensi","Attendance")],["pen","📝 "+T("Penilaian","Evaluations")],["ana","🎥 "+T("Analisa Video","Video Analysis")],["iur","💳 "+T("Iuran","Tuition")],["uji","🥇 "+T("Ujian sabuk","Belt Test")],["lap","📊 "+T("Laporan murid","Student Report")],["rkp","📈 "+T("Ringkasan bulanan","Monthly Summary")],["jad","📅 "+T("Jadwal & Unit","Schedule & Units")],["umum","📢 "+T("Pengumuman","Announcements")],["dat","💾 "+T("Data","Data & Backup")]];
+    const NV=[["dash","🥋 "+T("Dashboard","Dashboard")],["mur","👥 "+T("Murid","Students")],["pel","🎖️ "+T("Pelatih","Coaches")],["abs","✅ "+T("Absensi","Attendance")],["pen","📝 "+T("Penilaian","Evaluations")],["ana","🎥 "+T("Analisa Video","Video Analysis")],["iur","💳 "+T("Iuran","Tuition")],["uji","🥇 "+T("Ujian sabuk","Belt Test")],["lap","📊 "+T("Laporan murid","Student Report")],["rkp","📈 "+T("Ringkasan bulanan","Monthly Summary")],["jad","📅 "+T("Jadwal & Unit","Schedule & Units")],["umum","📢 "+T("Pengumuman","Announcements")],["lgn","💳 "+T("Langganan","Subscription")],["dat","💾 "+T("Data","Data & Backup")]];
     document.querySelector("nav").innerHTML=`<div class="brand"><div class="brand-wrap"><img id="navLogoImg" class="brand-logo" src="${lu}" style="${lu?"":"display:none"}" alt="${CNE()}"><div>Dojang HQ<small>${CNE()}</small></div></div></div>`+`<div class="unit-sw"><label>${T("Pilih Unit Dojang","Select Dojang Unit")}</label><select id="unitSel" aria-label="${T("Pilih Unit Dojang","Select Dojang Unit")}"></select></div>`+NV.filter(x=>ROLE==="owner"||STAFF_VIEWS.includes(x[0])).map(x=>`<button data-v="${x[0]}">${x[1]}</button>`).join("")+`<button type="button" data-champ="1">🏆 Champion (PR)</button>`+(ROLE==="owner"?"":`<div style="padding:10px 14px;font-size:12.5px;color:#cfd6ff;opacity:.85">👤 ${esc(WHO)} · ${T("Pelatih","Coach")}</div><button id="pwBtn" style="opacity:.75">🔑 ${T("Ganti kata sandi","Change password")}</button>`)+`<button id="logoutBtn" style="margin-top:auto;opacity:.75">🔒 ${T("Kunci / Keluar","Lock / Sign Out")}</button>`;
     document.getElementById("unitSel").onchange=e=>{curUnit=e.target.value;localStorage.setItem("dojang_unit",curUnit);selId="";draw()};
     {const mb=document.getElementById("mbar");if(mb){const MB=[["dash","🥋",T("Dashboard","Dashboard")],["abs","✅",T("Absensi","Attendance")],["pen","📝",T("Penilaian","Evaluate")],["mur","👥",T("Murid","Students")]];mb.innerHTML=MB.map(x=>`<button type="button" data-v="${x[0]}" aria-label="${x[2]}"><span aria-hidden="true">${x[1]}</span><small>${x[2]}</small></button>`).join("")+`<button type="button" id="mMore" aria-expanded="${document.body.classList.contains("msheet")}" aria-controls="mainNav"><span aria-hidden="true">☰</span><small>${T("Lainnya","More")}</small></button>`;}}
     document.getElementById("logoutBtn").onclick=()=>{localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_atok");localStorage.removeItem("dojang_token");localStorage.removeItem("dojang_target_club");__pin="";__atok="";__tok="";__targetClub="";location.reload()};
     FT.length=0;
-    FT.push([T("Belum dibuat di versi ini","Not yet built in this version"),[[T("Posting ke Instagram sungguhan","Direct Instagram publishing"),T("Butuh akun Instagram Professional dan aplikasi Meta (Graph API). Tab Konten masih contoh tampilan.","Requires an Instagram Professional account and Meta Graph API app. The Content tab is currently a preview.")],[T("Formulir pendaftaran publik","Public registration form"),T("Halaman terpisah di landing page agar orang tua mendaftar sendiri. Sementara, catat calon murid di menu Murid.","A standalone landing page form for parents to self-register. For now, record leads in the Students menu.")],[T("Pembayaran QRIS otomatis","Automated QRIS payments"),T("Butuh penyedia pembayaran.","Requires a payment gateway provider.")],[T("Kejuaraan dan stok perlengkapan","Tournaments and gear inventory"),T("Bisa ditambah setelah fitur inti dipakai rutin.","Can be added once core workflows are used regularly.")]]]);
+    FT.push([T("Belum dibuat di versi ini","Not yet built in this version"),[[T("Posting ke Instagram sungguhan","Direct Instagram publishing"),T("Butuh akun Instagram Professional dan aplikasi Meta (Graph API). Tab Konten masih contoh tampilan.","Requires an Instagram Professional account and Meta Graph API app. The Content tab is currently a preview.")],[T("Formulir pendaftaran publik","Public registration form"),T("Halaman terpisah di landing page agar orang tua mendaftar sendiri. Sementara, catat calon murid di menu Murid.","A standalone landing page form for parents to self-register. For now, record leads in the Students menu.")],[T("Kejuaraan dan stok perlengkapan","Tournaments and gear inventory"),T("Bisa ditambah setelah fitur inti dipakai rutin.","Can be added once core workflows are used regularly.")]]]);
   }
   function syncUnitSelect(){const selEl=document.getElementById("unitSel");if(!selEl)return;const units=getUnits();if(curUnit!=="all"&&!units.includes(curUnit))curUnit="all";const _one=ROLE!=="owner"&&PERM.units&&PERM.units.length>0&&units.length===1;if(_one)curUnit=units[0];selEl.innerHTML=(_one?"":`<option value="all" ${curUnit==="all"?"selected":""}>🌐 ${T("Semua Dojang","All Dojangs")} (${units.length})</option>`)+units.map(u=>`<option value="${esc(u)}" ${curUnit===u?"selected":""}>🥋 ${esc(u)}</option>`).join("");}
 V.sa=function(){
@@ -1150,7 +1263,7 @@ V.sa=function(){
         const isExp=c.expiresAt&&c.expiresAt<today;
         const isSusp=c.status==="suspended";
         const badge=isSusp?`<span class="pill warn">Suspended</span>`:isExp?`<span class="pill warn">Expired (${esc(c.expiresAt)})</span>`:`<span class="pill ok">Aktif s/d ${esc(c.expiresAt||"∞")}</span>`;
-        const waTagih=`Halo ${c.headCoach||"Sabeum"}, mengingatkan masa aktif langganan aplikasi *Dojang HQ* untuk *${c.name}* (${c.plan||"Basic"}) berakhir pada *${c.expiresAt||"-"}*. Silakan konfirmasi perpanjangan agar akses admin & portal orang tua tetap aktif. Terima kasih! 🙏`;
+        const waTagih=`Halo ${c.headCoach||"Sabeum"}, mengingatkan masa aktif langganan aplikasi *Dojang HQ* untuk *${c.name}* (${c.plan||"Basic"}) berakhir pada *${c.expiresAt||"-"}*. Perpanjang mudah (QRIS / Virtual Account / e-wallet / transfer) lewat tautan ini: ${location.origin}/?bayar=1&club=${c.id}\n\nAgar akses admin & portal orang tua tetap aktif. Terima kasih! 🙏`;
         return `<div class="row" style="flex-wrap:wrap;gap:12px"><div style="display:flex;align-items:center;gap:12px;flex:1 1 280px">${c.logo?`<img src="${c.logo}" style="width:46px;height:46px;border-radius:50%;object-fit:contain;border:1px solid var(--ln);background:#fff;padding:3px">`:""}<div><b>🥋 ${esc(c.name||c.id)}</b> <span class="pill">${esc(c.plan||"Basic")}</span> ${badge}<br><span class="mu" style="font-size:13px">User: <code>${esc(c.adminUser||c.id)}</code> · Pelatih: ${esc(c.headCoach||"-")} · <b>${cnt} murid aktif</b></span></div></div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" style="padding:7px 12px;font-size:13px" data-a="enterClub" data-id="${esc(c.id)}">🚪 ${T("Masuk ke Dojang","Open Dojang")}</button><button class="btn ghost" style="padding:7px 11px;font-size:13px" data-a="extendClub" data-id="${esc(c.id)}" data-days="30">+1 Bln</button><button class="btn ghost" style="padding:7px 11px;font-size:13px" data-a="extendClub" data-id="${esc(c.id)}" data-days="365">+1 Thn</button>${c.ownerWa?`<a class="btn ghost" style="padding:7px 11px;font-size:13px" target="_blank" rel="noopener" href="https://wa.me/${wan(c.ownerWa)}?text=${encodeURIComponent(waTagih)}">📲 Tagih WA</a>`:""}<button class="btn ghost" style="padding:7px 11px;font-size:13px" data-a="editClub" data-id="${esc(c.id)}">${T("Ubah","Edit")}</button><button class="btn ghost dn" style="padding:7px 11px;font-size:13px" data-a="delClub" data-id="${esc(c.id)}">${cfDelClub===c.id?T("Yakin hapus?","Confirm?"):T("Hapus","Delete")}</button></div></div>`;
       }).join(""):`<p class="mu">${T("Belum ada dojang klien terdaftar. Klik tombol + Tambah Dojang Klien di atas untuk membuat akun dojang pertama.","No client dojangs registered yet. Click + Add Client Dojang above to create your first dojang account.")}</p>`;
       return `${langBarHtml()}<div class="hero" style="background:linear-gradient(105deg,#0E1430 0 65%,#1D3FA6 65% 100%)"><div class="hl"><div><span>👑 SaaS Control Center · Dojang HQ</span><h1>Panel Super Admin</h1><p>${T("Kelola seluruh dojang klien, akun Username + PIN, masa aktif langganan & update aplikasi terpusat.","Manage all client dojangs, Username + PIN credentials, subscription expiry & centralized app updates.")}</p></div></div><div class="hr"><span>${T("Total Klien","Total Clients")}</span><b>${__saClubs.length} Dojang</b><small>${totActiveClubs} ${T("aktif","active")} · ${totStudents} ${T("total murid","total students")}</small></div></div><div class="kpis"><div class="kpi"><strong>${__saClubs.length}</strong>${T("Total Dojang Klien","Total Client Dojangs")}</div><div class="kpi"><strong>${totActiveClubs}</strong>${T("Langganan Aktif","Active Subscriptions")}</div><div class="kpi"><strong>${totStudents}</strong>${T("Total Murid Platform","Total Platform Students")}</div></div><div class="top"><h2>🏢 ${T("Daftar Dojang Klien","Client Dojangs List")}</h2><button class="btn" data-a="newClub">+ ${T("Tambah Dojang Klien","Add Client Dojang")}</button></div>${formHtml}<div class="sec">${clubRows}</div>`;
@@ -1159,9 +1272,103 @@ V.upd=function(){
       if(__role!=="superadmin"||__club)return V.dash();
       return `${langBarHtml()}<div class="top"><div><h1>🚀 ${T("Update Aplikasi SaaS (Terpusat)","Centralized SaaS App Update")}</h1><span class="mu">${T("Sekali update ke main, seluruh dojang klien otomatis mendapat versi terbaru.","Once updated to main, all client dojangs automatically receive the latest version.")}</span></div></div><div class="sec"><div class="f" style="margin-bottom:10px"><div><label>GitHub Personal Access Token</label><input id="ghTok" type="password" placeholder="github_pat_..." value="${esc(localStorage.getItem("dojang_gh_tok")||"")}"></div><div><label>${T("Judul Commit (opsional)","Commit Title (optional)")}</label><input id="ghTitle" type="text"></div></div><label>${T("Tempel Kode HTML Update","Paste Update HTML Code")}</label><textarea id="ghPkg" rows="8" placeholder="<!DOCTYPE html>..."></textarea><div id="ghRes" style="margin-top:10px"></div><p style="margin-top:12px"><button class="btn" data-a="ghRun" data-mode="direct">🚀 ${T("Update Langsung ke Main (Semua Klien)","Update Directly to Main (All Clients)")}</button></p></div>`;
 };
+V.lgn=function(){
+      const cid=(__club&&__club.id)||CLUB_ID;
+      setTimeout(()=>{const m=document.getElementById("payMount");if(m)payUi(m,cid)},0);
+      return `${langBarHtml()}<div class="top"><div><h1>💳 ${T("Langganan & Pembayaran","Subscription & Payment")}</h1><span class="mu">${T("Perpanjang langganan Dojang HQ dengan QRIS, Virtual Account, e-wallet, atau transfer.","Renew your Dojang HQ subscription with QRIS, Virtual Account, e-wallet or bank transfer.")}</span></div></div><div id="payMount"></div>`;
+};
+let billSt={data:null,draft:null,busy:false,cf:"",rec:{club:"",months:1,amount:"",note:""},err:""};
+async function billLoad(){
+  try{
+    const r=await fetch("/api/billing?list=1",{cache:"no-store",headers:__hdr()});const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||("HTTP "+r.status));
+    billSt.data=d;billSt.err="";if(!billSt.draft)billSt.draft=JSON.parse(JSON.stringify(d.settings));
+  }catch(e){billSt.err=e.message}
+  if(cur==="pay")draw();
+}
+async function billPost(b){
+  const r=await fetch("/api/billing",{method:"POST",headers:__hdr({"content-type":"application/json"}),body:JSON.stringify(b)});const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.error||("HTTP "+r.status));return d;
+}
+function billCollect(){
+  const D=billSt.draft;if(!D||!document.getElementById("bl_wa"))return;
+  D.plans=[...document.querySelectorAll("[data-plrow]")].map(r=>({id:r.dataset.plid||"",name:r.querySelector("[data-f=name]").value,price:Number(r.querySelector("[data-f=price]").value)||0,note:r.querySelector("[data-f=note]").value}));
+  D.discounts={"3":+document.getElementById("bl_d3").value||0,"6":+document.getElementById("bl_d6").value||0,"12":+document.getElementById("bl_d12").value||0};
+  D.bank={bank:document.getElementById("bl_bank").value,number:document.getElementById("bl_no").value,holder:document.getElementById("bl_an").value};
+  D.contactWa=document.getElementById("bl_wa").value;
+}
+V.pay=function(){
+  if(__role!=="superadmin"||__club)return V.dash();
+  if(!billSt.data&&!billSt.err){billLoad()}
+  const d=billSt.data,D=billSt.draft;
+  if(!d||!D)return `${langBarHtml()}<div class="top"><div><h1>💰 ${T("Pembayaran Klien","Client Payments")}</h1></div></div><div class="sec"><p class="mu">${billSt.err?esc(billSt.err):T("Memuat…","Loading…")}</p></div>`;
+  const hook=location.origin+"/api/pay-hook";
+  const stPill=s=>s==="paid"?`<span class="pill ok">${T("Lunas","Paid")}</span>`:s==="pending"?`<span class="pill leave">${T("Menunggu","Pending")}</span>`:`<span class="pill warn">${s==="expired"?T("Kedaluwarsa","Expired"):T("Ditolak","Rejected")}</span>`;
+  const cname=id=>{const c=__saClubs.find(x=>x.id===id);return c?c.name||c.id:id};
+  const inv=d.invoices.map(i=>`<div class="row" style="flex-wrap:wrap;gap:10px;align-items:center"><div style="flex:1 1 240px"><b>${esc(cname(i.clubId))}</b> ${stPill(i.status)} ${i.claimed&&i.status==="pending"?`<span class="pill warn">${T("Klien bilang sudah transfer","Client says paid")}</span>`:""}<br><span class="mu" style="font-size:13px">${esc(i.planName||i.plan||"")} · ${esc(i.months)} ${T("bln","mo")} · <b>${rp(i.total||i.amount)}</b> · ${i.method==="gateway"?"Xendit":i.method==="manual"?(i.recorded?T("Dicatat","Recorded"):T("Transfer manual","Manual")):""} · ${esc(new Date((i.createdAt||0)+7*3600e3).toISOString().slice(0,16).replace("T"," "))}${i.payer?" · "+esc(i.payer):""}${i.claimNote?" · “"+esc(i.claimNote)+"”":""}</span></div>${i.status==="pending"&&i.method==="manual"?`<div style="display:flex;gap:6px"><button class="btn" style="padding:7px 12px;font-size:13px" data-bill="confirm" data-id="${esc(i.id)}">${billSt.cf==="c:"+i.id?T("Yakin sudah masuk?","Sure it arrived?"):"✅ "+T("Konfirmasi","Confirm")}</button><button class="btn ghost dn" style="padding:7px 12px;font-size:13px" data-bill="reject" data-id="${esc(i.id)}">${T("Tolak","Reject")}</button></div>`:""}</div>`).join("")||`<p class="mu">${T("Belum ada tagihan.","No invoices yet.")}</p>`;
+  const planRows=D.plans.map((p,i)=>`<div class="row" data-plrow data-plid="${esc(p.id||"")}" style="flex-wrap:wrap;gap:8px"><input data-f="name" type="text" placeholder="${T("Nama paket","Plan name")}" value="${esc(p.name||"")}" style="flex:1 1 120px"><input data-f="price" type="number" min="0" step="1000" placeholder="${T("Harga/bulan (Rp)","Price/month (Rp)")}" value="${p.price||""}" style="flex:1 1 130px"><input data-f="note" type="text" placeholder="${T("Keterangan (mis. s/d 100 murid)","Note (e.g. up to 100 students)")}" value="${esc(p.note||"")}" style="flex:2 1 180px"><button class="btn ghost dn" data-bill="delplan" data-i="${i}" aria-label="${T("Hapus paket","Remove plan")}">✕</button></div>`).join("");
+  const pending=d.invoices.filter(i=>i.status==="pending"&&i.method==="manual"&&i.claimed).length;
+  return `${langBarHtml()}<div class="top"><div><h1>💰 ${T("Pembayaran Klien","Client Payments")}</h1><span class="mu">${T("Atur paket & harga, cara bayar, dan konfirmasi pembayaran dari dojang klien.","Set plans & prices, payment methods, and confirm client payments.")}</span></div></div>
+  ${billSt.err?`<div class="sec" style="color:var(--rd);font-weight:600">${esc(billSt.err)}</div>`:""}
+  <div class="sec" style="border-top:4px solid ${d.gateway?"var(--ok)":"#F2B600"}"><h2>⚡ ${T("Pembayaran online (Xendit)","Online payment (Xendit)")}</h2>
+    <p style="margin:0 0 6px">${d.gateway?`<span class="pill ok">${T("Kunci API terpasang","API key installed")}</span>`:`<span class="pill leave">${T("Belum aktif","Not active")}</span>`} ${d.gateway&&d.hookReady?`<span class="pill ok">Webhook siap</span>`:d.gateway?`<span class="pill warn">${T("XENDIT_CALLBACK_TOKEN belum diisi","XENDIT_CALLBACK_TOKEN not set")}</span>`:""}</p>
+    <p class="mu" style="margin:0 0 8px;font-size:13.5px">${T("Klien bisa bayar dengan QRIS, Virtual Account, e-wallet, minimarket; masa aktif otomatis bertambah. Isi <code>XENDIT_SECRET_KEY</code> dan <code>XENDIT_CALLBACK_TOKEN</code> di Cloudflare (lihat SETUP.md), lalu daftarkan URL webhook ini di Xendit (Settings → Webhooks → Invoices paid):","Clients can pay by QRIS, Virtual Account, e-wallet or convenience store, and the expiry extends automatically. Set <code>XENDIT_SECRET_KEY</code> and <code>XENDIT_CALLBACK_TOKEN</code> in Cloudflare (see SETUP.md), then register this webhook URL in Xendit (Settings → Webhooks → Invoices paid):")}</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><code style="word-break:break-all">${esc(hook)}</code><button class="btn ghost" data-bill="copy" data-t="${esc(hook)}" style="padding:5px 10px;font-size:12.5px">${T("Salin","Copy")}</button></div></div>
+  <div class="sec"><h2>📦 ${T("Paket & harga","Plans & pricing")}</h2>${planRows||`<p class="mu">${T("Belum ada paket. Klien baru bisa membayar setelah minimal satu paket diisi.","No plans yet. Clients can pay once at least one plan is added.")}</p>`}
+    <div style="margin:8px 0"><button class="btn ghost" data-bill="addplan">+ ${T("Tambah paket","Add plan")}</button></div>
+    <label style="margin-top:10px">${T("Diskon durasi (%)","Duration discount (%)")}</label><div class="row" style="gap:8px;flex-wrap:wrap"><span>3 ${T("bln","mo")}</span><input id="bl_d3" type="number" min="0" max="90" value="${D.discounts["3"]||0}" style="width:80px"><span>6 ${T("bln","mo")}</span><input id="bl_d6" type="number" min="0" max="90" value="${D.discounts["6"]||0}" style="width:80px"><span>12 ${T("bln","mo")}</span><input id="bl_d12" type="number" min="0" max="90" value="${D.discounts["12"]||0}" style="width:80px"></div></div>
+  <div class="sec"><h2>🏦 ${T("Transfer manual / QRIS statis","Manual transfer / static QRIS")}</h2><p class="mu" style="margin:0 0 8px;font-size:13.5px">${T("Opsional. Dipakai bila pembayaran online belum aktif atau klien memilih transfer. Tiap tagihan diberi 3 angka unik supaya mudah dicocokkan di mutasi rekening.","Optional. Used when online payment is off or the client prefers a transfer. Each invoice gets 3 unique digits to ease matching in your statement.")}</p>
+    <div class="f"><div><label>${T("Bank","Bank")}</label><input id="bl_bank" type="text" placeholder="BCA" value="${esc(D.bank.bank)}"></div><div><label>${T("No. rekening","Account no.")}</label><input id="bl_no" type="text" inputmode="numeric" value="${esc(D.bank.number)}"></div><div><label>${T("Atas nama","Account holder")}</label><input id="bl_an" type="text" value="${esc(D.bank.holder)}"></div><div><label>${T("WhatsApp penerima bukti (628…)","WhatsApp for proofs (628…)")}</label><input id="bl_wa" type="text" inputmode="numeric" placeholder="62812…" value="${esc(D.contactWa)}"></div></div>
+    <div style="margin-top:10px"><label>${T("Gambar QRIS (opsional)","QRIS image (optional)")}</label><input type="file" id="bl_qris" accept="image/png,image/jpeg,image/webp">${D.qrisImage?`<div style="margin-top:8px"><img src="${D.qrisImage}" alt="QRIS" style="max-width:160px;border:1px solid var(--ln);border-radius:8px;background:#fff"> <button class="btn ghost dn" data-bill="delqris">${T("Hapus","Remove")}</button></div>`:""}</div></div>
+  <div class="sec"><button class="btn" data-bill="save" ${billSt.busy?"disabled":""}>💾 ${T("Simpan pengaturan pembayaran","Save payment settings")}</button></div>
+  <div class="sec"><h2>🧾 ${T("Tagihan","Invoices")} ${pending?`<span class="pill warn">${pending} ${T("perlu dicek","to review")}</span>`:""}</h2>${inv}</div>
+  <div class="sec"><h2>✍️ ${T("Catat pembayaran di luar sistem","Record an offline payment")}</h2><div class="f"><div><label>${T("Dojang","Dojang")}</label><select id="bl_rc"><option value="">—</option>${__saClubs.map(c=>`<option value="${esc(c.id)}" ${billSt.rec.club===c.id?"selected":""}>${esc(c.name||c.id)}</option>`).join("")}</select></div><div><label>${T("Perpanjang (bulan)","Extend (months)")}</label><input id="bl_rm" type="number" min="1" max="36" value="${billSt.rec.months}"></div><div><label>${T("Nominal diterima (Rp)","Amount received (Rp)")}</label><input id="bl_ra" type="number" min="0" step="1000" value="${esc(billSt.rec.amount)}"></div><div><label>${T("Catatan","Note")}</label><input id="bl_rn" type="text" placeholder="tunai" value="${esc(billSt.rec.note)}"></div></div><div style="margin-top:10px"><button class="btn" data-bill="record">${T("Catat & perpanjang","Record & extend")}</button></div></div>`;
+};
+document.addEventListener("click",async e=>{
+  const b=e.target.closest("[data-bill]");if(!b||__role!=="superadmin")return;
+  const a=b.dataset.bill;
+  try{
+    if(a==="copy"){try{await navigator.clipboard.writeText(b.dataset.t);toast(T("Disalin","Copied"))}catch(x){toast(b.dataset.t)}return}
+    billCollect();
+    const D=billSt.draft;
+    if(a==="addplan"){D.plans.push({id:"",name:"",price:0,note:""});return draw()}
+    if(a==="delplan"){D.plans.splice(+b.dataset.i,1);return draw()}
+    if(a==="delqris"){D.qrisImage="";return draw()}
+    if(a==="save"){billSt.busy=true;draw();try{const r=await billPost({action:"settings",settings:D});billSt.draft=JSON.parse(JSON.stringify(r.settings));toast(T("✓ Pengaturan pembayaran tersimpan","✓ Payment settings saved"))}finally{billSt.busy=false}await billLoad();return}
+    if(a==="confirm"){
+      if(billSt.cf!=="c:"+b.dataset.id){billSt.cf="c:"+b.dataset.id;return draw()}
+      billSt.cf="";const r=await billPost({action:"confirm",invoice:b.dataset.id});
+      toast(T("✓ Lunas. Aktif sampai ","✓ Paid. Active until ")+(r.expiresAt||""));
+      await billLoad();try{await __pull()}catch(x){}return;
+    }
+    if(a==="reject"){await billPost({action:"reject",invoice:b.dataset.id});toast(T("Tagihan ditolak","Invoice rejected"));await billLoad();return}
+    if(a==="record"){
+      const club=document.getElementById("bl_rc").value,months=+document.getElementById("bl_rm").value,amount=document.getElementById("bl_ra").value,note=document.getElementById("bl_rn").value;
+      billSt.rec={club,months,amount,note};
+      if(!club)return toast(T("Pilih dojang dulu","Pick a dojang first"));
+      const r=await billPost({action:"record",club,months,amount,note});
+      billSt.rec={club:"",months:1,amount:"",note:""};
+      toast(T("✓ Tercatat. Aktif sampai ","✓ Recorded. Active until ")+(r.expiresAt||""));
+      await billLoad();try{await __pull()}catch(x){}return;
+    }
+  }catch(err){billSt.busy=false;toast((err&&err.message)||String(err))}
+});
+document.addEventListener("change",e=>{
+  if(!e.target||e.target.id!=="bl_qris"||!e.target.files||!e.target.files[0])return;
+  billCollect();
+  const f=e.target.files[0],fr=new FileReader();
+  fr.onload=()=>{const img=new Image();img.onload=()=>{
+    const m=700,k=Math.min(1,m/Math.max(img.width,img.height)),cv=document.createElement("canvas");cv.width=Math.round(img.width*k);cv.height=Math.round(img.height*k);
+    const cx=cv.getContext("2d");cx.fillStyle="#fff";cx.fillRect(0,0,cv.width,cv.height);cx.drawImage(img,0,0,cv.width,cv.height);
+    let u=cv.toDataURL("image/png");if(u.length>580000)u=cv.toDataURL("image/jpeg",.9);
+    if(u.length>580000)return toast(T("Gambar terlalu besar","Image too large"));
+    billSt.draft.qrisImage=u;draw();
+  };img.src=fr.result};
+  fr.readAsDataURL(f);
+});
   function draw(){
     if(__role==="superadmin"&&!__club){
-      if(cur!=="sa"&&cur!=="upd")cur="sa";
+      if(cur!=="sa"&&cur!=="upd"&&cur!=="pay")cur="sa";
       $("#app").innerHTML=V[cur]();
       document.querySelectorAll("nav button[data-v],#mbar button[data-v]").forEach(b=>b.setAttribute("aria-current",b.dataset.v==cur));
       applyLogoAll();

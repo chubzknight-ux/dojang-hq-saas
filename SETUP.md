@@ -24,6 +24,10 @@ Opsional (fitur Analisa Video AI):
 - `GEMINI_API_KEY`, atau `ANTHROPIC_API_KEY`
 - `ANALYZE_DAILY_LIMIT` — batas analisa per klub per hari (bawaan 30)
 
+Pembayaran langganan online (opsional, lihat bagian "Pembayaran langganan" di bawah):
+- `XENDIT_SECRET_KEY` — API key Xendit (tipe Secret, izin Invoice: write).
+- `XENDIT_CALLBACK_TOKEN` — "Verification Token" webhook dari Xendit.
+
 Setelah mengubah variabel, deploy ulang.
 
 ## 5. Alur penggunaan
@@ -61,3 +65,24 @@ Aplikasi PWA terpisah di alamat `/champion` (domain yang sama dengan Dojang HQ),
 - **Murid langsung (tanpa Portal Orang Tua)**: di daftar Murid tekan **🏆 Champion** untuk menyalin link `/champion?id=...`, kirim ke murid. Murid cukup mengetik namanya sendiri (nama saudara kandung tidak diterima, dan akses hanya untuk dirinya).
 - **Admin & pelatih**: menu **🏆 Champion (PR)** → atur PR aktif klub (21 latihan kekuatan & kelenturan, target, pesan; bisa **sama untuk semua** atau **🎲 acak per anak** dengan jumlah latihan per anak, opsional acak ulang tiap hari), lihat siapa yang sudah / belum latihan per tanggal & unit, skor, foto posisi terbaik, kirim rekap atau pengumuman ke WA. Pelatih hanya melihat murid di unitnya; mengatur PR butuh izin absen atau penilaian.
 - Data: koleksi `champion` (hasil), `champion_foto` (foto, otomatis dihapus setelah 60 hari), `champion_pr` (PR aktif). Tidak ikut sinkron data admin, jadi aplikasi tetap ringan. Tidak perlu pengaturan tambahan.
+
+## 💳 Pembayaran langganan
+Klien membayar sendiri lewat satu halaman: `https://DOMAIN/?bayar=1&club=KODE`. Tautan ini tidak memerlukan login, jadi klub yang masa aktifnya sudah habis pun tetap bisa membayar. Tautan juga otomatis ada di pesan **📲 Tagih WA** (Super Admin), di tombol **Bayar / perpanjang sekarang** pada layar masuk saat langganan habis, dan di menu **💳 Langganan** (admin klub).
+
+Alur klien: pilih paket → pilih durasi (1/3/6/12 bulan, ada diskon durasi) → pilih cara bayar → selesai. Masa aktif otomatis disambung dari tanggal berakhir (atau dari hari ini bila sudah habis) dan klub yang ditangguhkan karena belum bayar otomatis aktif lagi.
+
+### A. Atur paket & harga (wajib, sekali saja)
+Super Admin → menu **💰 Pembayaran** → isi paket (nama, harga per bulan), diskon durasi, lalu Simpan. Klien belum bisa membayar sebelum minimal satu paket diisi.
+
+### B. Pembayaran online otomatis (Xendit, disarankan)
+Satu halaman bayar berisi QRIS, Virtual Account (BCA, Mandiri, BNI, BRI, dll.), e-wallet (GoPay, OVO, DANA, ShopeePay), dan minimarket.
+1. Daftar di xendit.co, lalu **Settings → API Keys → Generate secret key** dengan izin *Invoices: Write*. Isi di Cloudflare sebagai Secret `XENDIT_SECRET_KEY`.
+2. **Settings → Webhooks → Invoices paid** (dan *Invoices expired*): isi URL `https://DOMAIN/api/pay-hook`. Salin *Verification Token* ke Secret `XENDIT_CALLBACK_TOKEN`.
+3. Deploy ulang. Menu **💰 Pembayaran** menampilkan status "Kunci API terpasang" dan "Webhook siap".
+
+Keamanan: webhook memeriksa token, lalu status dan nominal tagihan diverifikasi ulang langsung ke Xendit sebelum masa aktif diperpanjang. Webhook ganda tidak memperpanjang dua kali. Selama kunci Xendit belum diisi, tombol bayar online otomatis tersembunyi.
+
+### C. Transfer manual / QRIS statis (tanpa gateway)
+Di menu **💰 Pembayaran** isi rekening dan/atau unggah gambar QRIS. Klien mendapat nominal + 3 angka unik (mis. Rp 450.123) supaya mudah dicocokkan di mutasi, menekan **Saya sudah transfer** atau mengirim bukti via WhatsApp, lalu Super Admin menekan **✅ Konfirmasi** dan masa aktif otomatis bertambah. Pembayaran tunai bisa dicatat lewat **Catat pembayaran di luar sistem**.
+
+Data: koleksi `invoices` (tagihan) dan `billing_settings` (pengaturan), keduanya tidak ikut sinkron data klub dan tidak bisa diubah lewat API umum.
