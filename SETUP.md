@@ -24,10 +24,6 @@ Opsional (fitur Analisa Video AI):
 - `GEMINI_API_KEY`, atau `ANTHROPIC_API_KEY`
 - `ANALYZE_DAILY_LIMIT` — batas analisa per klub per hari (bawaan 30)
 
-Pembayaran langganan online (opsional, lihat bagian "Pembayaran langganan"):
-- `XENDIT_SECRET_KEY` — API key Xendit (tipe Secret, izin Invoices: Write).
-- `XENDIT_CALLBACK_TOKEN` — "Verification Token" webhook dari Xendit.
-
 Setelah mengubah variabel, deploy ulang.
 
 ## 5. Alur penggunaan
@@ -83,18 +79,14 @@ Diskon durasi: 3 bulan 5%, 6 bulan 10%, 12 bulan 20% (Basic setahun ≈ Rp47 rib
 Batas dijalankan oleh server, bukan sekadar label: murid baru / unit baru ditolak bila paket penuh (pesan meminta upgrade), murid cuti tidak dihitung, data lama tidak pernah dihapus bila paket diturunkan, dan klub dengan nama paket yang tidak dikenal tidak diblokir. Upgrade dilakukan dengan membayar paket yang lebih tinggi (masa aktif disambung dari tanggal berakhir, tanpa pro-rata). Menu **💳 Langganan** menampilkan pemakaian (mis. 45/60 murid).
 
 ### Alur klien
-Klien membayar lewat satu halaman: `https://DOMAIN/?bayar=1&club=KODE` (tanpa login, jadi klub yang sudah kedaluwarsa tetap bisa bayar). Tautan juga ada di pesan **📲 Tagih WA**, di layar masuk saat langganan habis, dan di menu **💳 Langganan**. Pilih paket → durasi → cara bayar. Masa aktif otomatis disambung dan klub yang ditangguhkan karena belum bayar otomatis aktif lagi.
+Klien membayar lewat satu halaman: `https://DOMAIN/?bayar=1&club=KODE` (tanpa login, jadi klub yang sudah kedaluwarsa tetap bisa bayar). Tautan juga ada di pesan **📲 Tagih WA**, di layar masuk saat langganan habis, dan di menu **💳 Langganan**. Masa aktif otomatis disambung dan klub yang ditangguhkan karena belum bayar otomatis aktif lagi.
 
-### A. Pembayaran online otomatis (Xendit)
-Satu halaman bayar berisi QRIS, Virtual Account (BCA, Mandiri, BNI, BRI, dll.), e-wallet (GoPay, OVO, DANA, ShopeePay), dan minimarket. Biaya Xendit ditanggung Anda (kira-kira 0,7% untuk QRIS, sekitar Rp4 ribu untuk Virtual Account); tarif terbaru ada di xendit.co.
-1. Daftar di xendit.co, lalu **Settings → API Keys → Generate secret key** dengan izin *Invoices: Write*. Isi di Cloudflare sebagai Secret `XENDIT_SECRET_KEY`.
-2. **Settings → Webhooks → Invoices paid** (dan *Invoices expired*): isi URL `https://DOMAIN/api/pay-hook`. Salin *Verification Token* ke Secret `XENDIT_CALLBACK_TOKEN`.
-3. Deploy ulang. Menu **💰 Pembayaran** menampilkan "Kunci API terpasang" dan "Webhook siap". Uji dengan satu pembayaran kecil dulu (mode Test di Xendit tersedia).
-
-Keamanan: webhook memeriksa token, lalu status dan nominal tagihan diverifikasi ulang langsung ke Xendit sebelum masa aktif diperpanjang. Webhook ganda tidak memperpanjang dua kali. Selama kunci Xendit belum diisi, opsi bayar online otomatis tersembunyi.
-
-### B. Transfer manual / QRIS statis (cadangan, bisa dipakai bersamaan)
-Di 💰 Pembayaran isi rekening dan/atau unggah gambar QRIS. Klien mendapat nominal + 3 angka unik (mis. Rp 450.123), menekan **Saya sudah transfer**, lalu Super Admin mencocokkan mutasi dan menekan **✅ Konfirmasi**. Pembayaran tunai dicatat lewat **Catat pembayaran di luar sistem**.
+### Verifikasi manual (tanpa payment gateway)
+Payment gateway sengaja belum dipasang. Alurnya:
+1. **Atur sekali saja**: Super Admin → 💰 Pembayaran → cek paket & harga, isi rekening bank dan/atau unggah gambar QRIS, dan nomor WhatsApp penerima bukti. Klien belum bisa membayar sebelum rekening/QRIS diisi.
+2. **Klien**: pilih paket → durasi → *Buat tagihan transfer*. Klien mendapat nominal + 3 angka unik (mis. Rp 450.123) supaya mudah dicocokkan di mutasi rekening, lalu menekan **Saya sudah transfer** (atau mengirim bukti via WhatsApp).
+3. **Super Admin**: tagihan yang dikonfirmasi klien ditandai merah. Cocokkan dengan mutasi, lalu tekan **✅ Konfirmasi**. Masa aktif otomatis disambung dan klub yang ditangguhkan otomatis aktif lagi. **Tolak** membatalkan tagihan.
+4. Pembayaran tunai dicatat lewat **Catat pembayaran di luar sistem**.
 
 Data: koleksi `invoices` (tagihan) dan `billing_settings` (pengaturan) tidak ikut sinkron data klub dan tidak bisa diubah lewat API umum. Konfirmasi dua kali tidak memperpanjang dua kali.
 
