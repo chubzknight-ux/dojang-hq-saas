@@ -175,7 +175,7 @@ export const logicalId = (coll, id) => {
   return NS.has(coll) && s.includes("@") ? s.slice(s.indexOf("@") + 1) : s;
 };
 // Koleksi yang tidak boleh diubah lewat API umum (punya jalur khusus dan berisi kata sandi / catatan internal)
-export const PROTECTED = new Set(["staff", "staff_rl", "clubs", "audit_log", "champion", "champion_foto", "champion_pr", "invoices", "billing_settings"]);
+export const PROTECTED = new Set(["staff", "staff_rl", "clubs", "audit_log", "champion", "champion_foto", "champion_pr", "invoices", "billing_settings", "ai_usage"]);
 
 // Baca satu dokumen klub: versi berawalan dulu, lalu versi lama bila memang milik klub ini
 export async function getDoc(env, clubId, coll, id) {

@@ -3,6 +3,7 @@ import { audit } from "../../staff.js";
 
 const valid = p => /^[a-z_]{1,30}$/.test(p.coll) && /^[A-Za-z0-9_-]{1,120}$/.test(p.id);
 const readBody = async request => {
+  if (Number(request.headers.get("content-length") || 0) > 2_000_000) return null;
   const b = await request.json().catch(() => null);
   return b && typeof b === "object" && !Array.isArray(b) ? b : null;
 };

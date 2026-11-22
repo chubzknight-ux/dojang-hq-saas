@@ -1,9 +1,9 @@
 // Dojang HQ SaaS - inti sistem pembayaran langganan
 // Koleksi (semua PROTECTED, tidak ikut sinkron /api/all dan tidak bisa diubah lewat API umum):
 //   billing_settings/main : paket, harga, diskon durasi, rekening / QRIS untuk transfer manual
-//   invoices              : tagihan (id "INV-<klub>-<waktu>"), status pending | paid | expired | rejected
-// Pembayaran otomatis memakai Xendit Invoice (QRIS, Virtual Account, e-wallet, kartu, minimarket dalam SATU halaman bayar).
-// Tanpa kunci Xendit, sistem tetap jalan lewat transfer manual yang dikonfirmasi Super Admin.
+//   invoices              : tagihan (id "INV-<klub>-<acak>"), status pending | paid | rejected
+// Pembayaran saat ini lewat transfer bank / QRIS statis yang DIVERIFIKASI MANUAL oleh Super Admin.
+// (Integrasi pembayaran otomatis / payment gateway belum dipasang.)
 
 const enc = new TextEncoder();
 export const wibToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
@@ -84,57 +84,6 @@ export async function markPaid(env, invId, via, extra) {
   const next = { ...clubData, expiresAt, plan: inv.plan || club.plan, status: "active" };
   await env.DB.prepare("INSERT OR REPLACE INTO docs(coll,id,data) VALUES('clubs',?,?)").bind(club.id, JSON.stringify(next)).run();
   return { ok: true, invoice: paid, expiresAt };
-}
-
-// ===== Xendit =====
-export const xenditOn = env => !!String(env.XENDIT_SECRET_KEY || "").trim();
-const xAuth = env => "Basic " + btoa(String(env.XENDIT_SECRET_KEY).trim() + ":");
-
-export async function xenditCreate(env, { externalId, amount, description, payerName, successUrl, failureUrl }) {
-  const res = await fetch("https://api.xendit.co/v2/invoices", {
-    method: "POST",
-    headers: { Authorization: xAuth(env), "content-type": "application/json" },
-    body: JSON.stringify({
-      external_id: externalId,
-      amount,
-      currency: "IDR",
-      description,
-      invoice_duration: 3 * 86400,
-      customer: payerName ? { given_names: clip(payerName, 60) } : undefined,
-      success_redirect_url: successUrl,
-      failure_redirect_url: failureUrl
-    })
-  });
-  const d = await res.json().catch(() => ({}));
-  if (!res.ok || !d.invoice_url) throw new Error(d.message || ("Xendit HTTP " + res.status));
-  return d;
-}
-export async function xenditGet(env, xid) {
-  const res = await fetch("https://api.xendit.co/v2/invoices/" + encodeURIComponent(xid), { headers: { Authorization: xAuth(env) } });
-  const d = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(d.message || ("Xendit HTTP " + res.status));
-  return d;
-}
-export const xenditPaid = d => d && (d.status === "PAID" || d.status === "SETTLED");
-
-// Cocokkan status tagihan dengan Xendit (dipakai saat pelanggan kembali dari halaman bayar, dan oleh webhook).
-export async function syncInvoice(env, inv) {
-  if (!inv || inv.status !== "pending" || inv.method !== "gateway" || !inv.xid || !xenditOn(env)) return inv;
-  try {
-    const x = await xenditGet(env, inv.xid);
-    // jangan percaya nominal / referensi yang tidak cocok
-    if (x.external_id !== inv.id || Number(x.amount) !== Number(inv.amount)) return inv;
-    if (xenditPaid(x)) {
-      const r = await markPaid(env, inv.id, "xendit", { channel: clip(x.payment_channel || x.payment_method, 40) });
-      return r.invoice || inv;
-    }
-    if (x.status === "EXPIRED") {
-      const up = { ...inv, status: "expired" };
-      await saveInvoice(env, up);
-      return up;
-    }
-  } catch (e) { /* biarkan pending; dicoba lagi nanti */ }
-  return inv;
 }
 
 export const publicInvoice = inv => inv && ({

@@ -2,8 +2,8 @@
 //
 // PUBLIK (tanpa login, cukup kode klub; supaya klub yang masa aktifnya sudah habis tetap bisa membayar):
 //   GET  /api/billing?club=KODE          info klub, paket + harga, cara bayar, tagihan yang masih menunggu
-//   GET  /api/billing?invoice=ID         status satu tagihan (otomatis dicocokkan dengan Xendit)
-//   POST {action:"create", club, plan, months, method:"gateway"|"manual", name}   buat tagihan
+//   GET  /api/billing?invoice=ID         status satu tagihan
+//   POST {action:"create", club, plan, months, name}                               buat tagihan transfer
 //   POST {action:"claim", invoice, note}                                         "Saya sudah transfer" (manual)
 // SUPER ADMIN (header login Super Admin):
 //   GET  /api/billing?list=1             pengaturan lengkap + daftar tagihan
@@ -15,7 +15,7 @@ import { authenticate, cleanSlug } from "./_auth.js";
 import { hitLimit } from "./staff.js";
 import {
   DURATIONS, clip, wibToday, loadSettings, priceFor, loadClubRow, loadInvoice, saveInvoice, markPaid,
-  xenditOn, xenditCreate, syncInvoice, publicInvoice, randId
+  publicInvoice, randId
 } from "./_billing.js";
 
 const J = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -61,7 +61,7 @@ export async function onRequestGet({ env, request }) {
     for (const r of rs.results) { try { list.push({ id: r.id, ...JSON.parse(r.data) }); } catch (e) { /* lewati */ } }
     list.sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
     const settings = await loadSettings(env);
-    return J({ settings, invoices: list.slice(0, 200), gateway: xenditOn(env), hookReady: !!env.XENDIT_CALLBACK_TOKEN });
+    return J({ settings, invoices: list.slice(0, 200) });
   }
 
   if (!(await hitLimit(env, request, "payget", 120, 10 * 60000))) return J({ error: "Terlalu banyak permintaan. Coba lagi sebentar." }, 429);
@@ -69,9 +69,8 @@ export async function onRequestGet({ env, request }) {
   const invId = u.searchParams.get("invoice");
   if (invId) {
     if (!/^INV-[a-z0-9_-]+-[a-z0-9]+$/i.test(invId)) return J({ error: "Tagihan tidak ditemukan." }, 404);
-    let inv = await loadInvoice(env, invId);
+    const inv = await loadInvoice(env, invId);
     if (!inv) return J({ error: "Tagihan tidak ditemukan." }, 404);
-    inv = await syncInvoice(env, inv);
     const club = await loadClubRow(env, inv.clubId);
     return J({ invoice: publicInvoice(inv), club: club ? clubView(club) : null });
   }
@@ -86,9 +85,7 @@ export async function onRequestGet({ env, request }) {
   let invs = [];
   for (const r of rs.results) { try { invs.push({ id: r.id, ...JSON.parse(r.data) }); } catch (e) { /* lewati */ } }
   invs.sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
-  let pending = invs.find(i => i.status === "pending" && (i.method === "manual" || (Date.now() - i.createdAt) < 3 * 864e5 - 3600e3)) || null;
-  if (pending) pending = await syncInvoice(env, pending);
-  if (pending && pending.status !== "pending") pending = null;
+  const pending = invs.find(i => i.status === "pending") || null;
   const history = invs.filter(i => i.status === "paid").slice(0, 6).map(publicInvoice);
   const manualReady = !!(s.bank.number || s.qrisImage);
   return J({
@@ -97,7 +94,6 @@ export async function onRequestGet({ env, request }) {
     plans: s.plans,
     discounts: s.discounts,
     durations: DURATIONS,
-    gateway: xenditOn(env),
     manual: manualReady ? { bank: s.bank, qrisImage: s.qrisImage } : null,
     contactWa: s.contactWa,
     pending: pending ? { ...publicInvoice(pending), uniq: pending.uniq || 0 } : null,
@@ -170,9 +166,8 @@ export async function onRequestPost({ env, request }) {
     if (!plan) return J({ error: "Paket belum tersedia. Hubungi pengelola dojang." }, 400);
     const months = Number(b.months);
     if (!DURATIONS.includes(months)) return J({ error: "Durasi tidak valid." }, 400);
-    const method = b.method === "manual" ? "manual" : "gateway";
-    if (method === "gateway" && !xenditOn(env)) return J({ error: "Pembayaran online belum aktif. Pakai transfer manual." }, 400);
-    if (method === "manual" && !(s.bank.number || s.qrisImage)) return J({ error: "Transfer manual belum diatur." }, 400);
+    const method = "manual";
+    if (!(s.bank.number || s.qrisImage)) return J({ error: "Cara bayar belum diatur. Hubungi pengelola dojang." }, 400);
 
     const amount = priceFor(plan, months, s);
     const payer = clip(b.name, 60).trim();
@@ -183,7 +178,7 @@ export async function onRequestPost({ env, request }) {
     };
 
     // bila ada tagihan manual yang masih menunggu untuk paket & durasi yang sama, pakai lagi (tidak bikin dobel)
-    if (method === "manual") {
+    {
       const rs = await env.DB.prepare("SELECT id, data FROM docs WHERE coll='invoices' AND json_extract(data,'$.clubId')=?").bind(club.id).all();
       for (const r of rs.results) {
         let d; try { d = JSON.parse(r.data); } catch (e) { continue; }
@@ -204,24 +199,6 @@ export async function onRequestPost({ env, request }) {
       inv.total = amount + uniq;
       await saveInvoice(env, inv);
       return J({ invoice: { ...publicInvoice(inv), uniq } });
-    }
-
-    const origin = new URL(request.url).origin;
-    const back = origin + "/?bayar=1&club=" + encodeURIComponent(club.id) + "&inv=" + encodeURIComponent(id);
-    try {
-      const x = await xenditCreate(env, {
-        externalId: id,
-        amount,
-        description: "Langganan Dojang HQ " + (club.name || club.id) + " - " + plan.name + " " + months + " bulan",
-        payerName: payer,
-        successUrl: back, failureUrl: back
-      });
-      inv.xid = x.id;
-      inv.url = x.invoice_url;
-      await saveInvoice(env, inv);
-      return J({ invoice: publicInvoice(inv) });
-    } catch (e) {
-      return J({ error: "Gagal membuat tagihan online: " + clip(e.message, 120) }, 502);
     }
   }
 
