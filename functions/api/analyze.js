@@ -1,5 +1,6 @@
 import { authenticate } from "./_auth.js";
 import { userFromToken } from "./staff.js";
+import { planOfClub } from "./_billing.js";
 
 const J=(d,s=200)=>new Response(JSON.stringify(d),{status:s,headers:{"content-type":"application/json","cache-control":"no-store"}});
 const safeEq=(a,b)=>{a=String(a||"");b=String(b||"");if(a.length!==b.length)return false;let r=0;for(let i=0;i<a.length;i++)r|=a.charCodeAt(i)^b.charCodeAt(i);return r===0;};
@@ -85,7 +86,12 @@ export async function onRequestPost({request,env}){
     clubId=a.clubId||"";
     if(!clubId)return J({error:"Pilih dojang klien terlebih dahulu"},400);
   }
-  // Batas pemakaian per klub per hari (biaya AI ditanggung pemilik aplikasi). Atur dengan ANALYZE_DAILY_LIMIT.
+  // Paket tanpa Analisa Video AI Cloud (mis. Basic) ditolak; klub dengan paket tidak dikenal tidak diblokir
+{
+  const crow = await env.DB.prepare("SELECT id, data FROM docs WHERE coll='clubs' AND id=?").bind(clubId).first();
+  if (crow) { let c = null; try { c = { id: crow.id, ...JSON.parse(crow.data) }; } catch (e) {} const pl = c ? await planOfClub(env, c) : null; if (pl && !pl.ai) return J({ error: "Analisa Video AI Cloud tersedia di paket Pro. Mode analisa di perangkat tetap gratis. Upgrade di menu Langganan." }, 402); }
+}
+// Batas pemakaian per klub per hari (biaya AI ditanggung pemilik aplikasi). Atur dengan ANALYZE_DAILY_LIMIT.
   const limit=Math.max(1,Number(env.ANALYZE_DAILY_LIMIT)||30);
   const day=new Date(Date.now()+7*3600*1000).toISOString().slice(0,10);
   const qid=clubId+"@"+day;

@@ -65,16 +65,30 @@ Aplikasi PWA terpisah di alamat `/champion` (domain yang sama dengan Dojang HQ),
 - **Admin & pelatih**: menu **🏆 Champion (PR)** → atur PR aktif klub (21 latihan kekuatan & kelenturan, target, pesan; bisa **sama untuk semua** atau **🎲 acak per anak** dengan jumlah latihan per anak, opsional acak ulang tiap hari), lihat siapa yang sudah / belum latihan per tanggal & unit, skor, foto posisi terbaik, kirim rekap atau pengumuman ke WA. Pelatih hanya melihat murid di unitnya; mengatur PR butuh izin absen atau penilaian.
 - Data: koleksi `champion` (hasil), `champion_foto` (foto, otomatis dihapus setelah 60 hari), `champion_pr` (PR aktif). Tidak ikut sinkron data admin, jadi aplikasi tetap ringan. Tidak perlu pengaturan tambahan.
 
-## 💳 Pembayaran langganan (verifikasi manual)
-Klien membayar sendiri lewat satu halaman: `https://DOMAIN/?bayar=1&club=KODE`. Tautan ini tidak memerlukan login, jadi klub yang masa aktifnya sudah habis pun tetap bisa membayar. Tautan juga otomatis ada di pesan **📲 Tagih WA** (Super Admin), di tombol **Bayar / perpanjang sekarang** pada layar masuk saat langganan habis, dan di menu **💳 Langganan** (admin klub).
+## 💳 Paket, harga & pembayaran langganan
+### Skema paket bawaan
+Harga dipatok jauh di bawah aplikasi sejenis (sekitar Rp199 ribu per bulan). Semua angka bisa diubah di Super Admin → 💰 Pembayaran.
 
-Integrasi pembayaran otomatis (payment gateway) sengaja belum dipasang. Saat ini pembayaran diverifikasi manual:
-1. **Atur sekali saja**: Super Admin → menu **💰 Pembayaran** → isi paket & harga per bulan, diskon durasi, rekening bank dan/atau unggah gambar QRIS, nomor WhatsApp penerima bukti. Klien belum bisa membayar sebelum minimal satu paket dan satu cara bayar diisi.
-2. **Klien**: pilih paket → pilih durasi (1/3/6/12 bulan) → *Buat tagihan transfer*. Klien mendapat nominal + 3 angka unik (mis. Rp 450.123) supaya mudah dicocokkan di mutasi rekening, lalu menekan **Saya sudah transfer** (atau mengirim bukti via WhatsApp).
-3. **Super Admin**: tagihan yang dikonfirmasi klien ditandai merah di menu Pembayaran. Cocokkan dengan mutasi rekening, lalu tekan **✅ Konfirmasi**. Masa aktif otomatis disambung dari tanggal berakhir (atau dari hari ini bila sudah habis) dan klub yang ditangguhkan otomatis aktif lagi. Tombol **Tolak** membatalkan tagihan.
-4. Pembayaran tunai atau di luar sistem dicatat lewat **Catat pembayaran di luar sistem**.
+| Paket | Harga / bulan | Murid aktif | Unit | Analisa Video AI Cloud |
+|---|---|---|---|---|
+| **Basic** | Rp 59.000 | maks 60 | 1 | tidak (mode analisa di perangkat tetap gratis) |
+| **Pro** | Rp 129.000 | tanpa batas | tanpa batas | ya (maks 30 analisa/hari/klub) |
 
-Data: koleksi `invoices` (tagihan) dan `billing_settings` (pengaturan), keduanya tidak ikut sinkron data klub dan tidak bisa diubah lewat API umum. Konfirmasi dua kali tidak memperpanjang dua kali.
+Diskon durasi: 3 bulan 5%, 6 bulan 10%, 12 bulan 20% (Basic setahun ≈ Rp47 ribu/bulan, Pro setahun ≈ Rp108 ribu/bulan). Harga dibulatkan ke Rp1.000.
+
+Batas dijalankan oleh server, bukan sekadar label: murid baru / unit baru ditolak bila paket penuh (pesan meminta upgrade), murid cuti tidak dihitung, data lama tidak pernah dihapus bila paket diturunkan, dan klub dengan nama paket yang tidak dikenal tidak diblokir. Upgrade dilakukan dengan membayar paket yang lebih tinggi (masa aktif disambung dari tanggal berakhir, tanpa pro-rata). Menu **💳 Langganan** menampilkan pemakaian (mis. 45/60 murid).
+
+### Alur klien
+Klien membayar lewat satu halaman: `https://DOMAIN/?bayar=1&club=KODE` (tanpa login, jadi klub yang sudah kedaluwarsa tetap bisa bayar). Tautan juga ada di pesan **📲 Tagih WA**, di layar masuk saat langganan habis, dan di menu **💳 Langganan**. Masa aktif otomatis disambung dan klub yang ditangguhkan karena belum bayar otomatis aktif lagi.
+
+### Verifikasi manual (tanpa payment gateway)
+Payment gateway sengaja belum dipasang. Alurnya:
+1. **Atur sekali saja**: Super Admin → 💰 Pembayaran → cek paket & harga, isi rekening bank dan/atau unggah gambar QRIS, dan nomor WhatsApp penerima bukti. Klien belum bisa membayar sebelum rekening/QRIS diisi.
+2. **Klien**: pilih paket → durasi → *Buat tagihan transfer*. Klien mendapat nominal + 3 angka unik (mis. Rp 450.123) supaya mudah dicocokkan di mutasi rekening, lalu menekan **Saya sudah transfer** (atau mengirim bukti via WhatsApp).
+3. **Super Admin**: tagihan yang dikonfirmasi klien ditandai merah. Cocokkan dengan mutasi, lalu tekan **✅ Konfirmasi**. Masa aktif otomatis disambung dan klub yang ditangguhkan otomatis aktif lagi. **Tolak** membatalkan tagihan.
+4. Pembayaran tunai dicatat lewat **Catat pembayaran di luar sistem**.
+
+Data: koleksi `invoices` (tagihan) dan `billing_settings` (pengaturan) tidak ikut sinkron data klub dan tidak bisa diubah lewat API umum. Konfirmasi dua kali tidak memperpanjang dua kali.
 
 ## 📖 Panduan video
 Video cara memakai fitur ada di folder `panduan/` dan bisa dibuka tanpa login di `/?panduan=1` (juga lewat menu **📖 Panduan** untuk admin klub dan Super Admin, tautan di layar masuk, dan tombol di Portal Orang Tua serta Champion). Video direkam otomatis dari aplikasi asli dengan data contoh memakai skrip di folder `tools-panduan/` (lihat `tools-panduan/README.md`); rekam ulang bila tampilan aplikasi berubah.

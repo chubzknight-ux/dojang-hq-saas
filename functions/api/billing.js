@@ -14,7 +14,7 @@
 import { authenticate, cleanSlug } from "./_auth.js";
 import { hitLimit } from "./staff.js";
 import {
-  DURATIONS, clip, wibToday, loadSettings, priceFor, loadClubRow, loadInvoice, saveInvoice, markPaid,
+  DURATIONS, clip, wibToday, loadSettings, priceFor, loadClubRow, loadInvoice, saveInvoice, markPaid, planOfClub, usageOf, normPlan,
   publicInvoice, randId
 } from "./_billing.js";
 
@@ -36,7 +36,7 @@ function cleanSettings(s) {
     let id = cleanSlug(p.id || name) || "paket";
     while (seen.has(id)) id += "x";
     seen.add(id);
-    plans.push({ id, name, price, note: clip(p.note, 120) });
+    plans.push(normPlan({ id, name, price, note: clip(p.note, 120), maxStudents: Math.min(100000, Number(p.maxStudents) || 0), maxUnits: Math.min(1000, Number(p.maxUnits) || 0), ai: !!p.ai }));
   }
   const dc = {};
   for (const k of ["3", "6", "12"]) dc[k] = Math.min(90, Math.max(0, Math.round(Number(s.discounts && s.discounts[k]) || 0)));
@@ -92,6 +92,8 @@ export async function onRequestGet({ env, request }) {
     club: clubView(club),
     today: wibToday(),
     plans: s.plans,
+    limits: await (async () => { const pl = await planOfClub(env, club); return pl ? { plan: pl.name, maxStudents: pl.maxStudents, maxUnits: pl.maxUnits, ai: pl.ai } : null; })(),
+    usage: await usageOf(env, clubId),
     discounts: s.discounts,
     durations: DURATIONS,
     manual: manualReady ? { bank: s.bank, qrisImage: s.qrisImage } : null,
