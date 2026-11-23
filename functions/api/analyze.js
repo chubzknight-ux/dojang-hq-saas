@@ -20,14 +20,14 @@ Aturan:
 - Jawab HANYA JSON valid, tanpa teks lain, dengan bentuk:
 {"poomsae":1-5|null,"kyorugi":1-5|null,"kekuatan":1-5|null,"kelenturan":1-5|null,"disiplin":1-5|null,"catatan":"2-4 kalimat","saran":["maks 3 saran latihan singkat"],"keyakinan":"rendah|sedang|tinggi"}`;
 
-async function viaCF(env,frames,text){
+async function viaCF(env,frames,text,o={}){
   if(!env.AI)return {err:"Workers AI belum dipasang (Settings > Bindings > Workers AI, nama variabel: AI)"};
   const pick=frames.length>4?[0,1,2,3].map(i=>frames[Math.round(i*(frames.length-1)/3)]):frames;
   const content=[{type:"text",text}];
   pick.forEach(data=>content.push({type:"image_url",image_url:{url:"data:image/jpeg;base64,"+data}}));
   let r;
   try{
-    r=await env.AI.run(env.CF_MODEL||"@cf/meta/llama-4-scout-17b-16e-instruct",{messages:[{role:"system",content:SYSTEM},{role:"user",content}],max_tokens:700});
+    r=await env.AI.run(env.CF_MODEL||"@cf/meta/llama-4-scout-17b-16e-instruct",{messages:[{role:"system",content:o.sys||SYSTEM},{role:"user",content}],max_tokens:o.max||700});
   }catch(e){
     const m=String((e&&e.message)||e);
     return {err:/3036|neuron|limit/i.test(m)?"Kuota gratis Workers AI hari ini habis, coba lagi besok (reset 07.00 WIB)":"Workers AI error: "+m.slice(0,160)};
@@ -36,7 +36,7 @@ async function viaCF(env,frames,text){
   return {raw:typeof raw==="string"?raw:JSON.stringify(raw)};
 }
 
-async function viaGemini(env,frames,text){
+async function viaGemini(env,frames,text,o={}){
   const model=env.GEMINI_MODEL||"gemini-3.8-flash";
   let res;
   try{
@@ -44,9 +44,9 @@ async function viaGemini(env,frames,text){
       method:"POST",
       headers:{"content-type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},
       body:JSON.stringify({
-        systemInstruction:{parts:[{text:SYSTEM}]},
+        systemInstruction:{parts:[{text:o.sys||SYSTEM}]},
         contents:[{role:"user",parts:[...frames.map(data=>({inline_data:{mime_type:"image/jpeg",data}})),{text}]}],
-        generationConfig:{responseMimeType:"application/json",maxOutputTokens:2000}
+        generationConfig:o.plain?{maxOutputTokens:o.max||3000}:{responseMimeType:"application/json",maxOutputTokens:2000}
       })
     });
   }catch(e){return {err:"Gagal menghubungi layanan analisa"};}
@@ -60,12 +60,12 @@ async function viaGemini(env,frames,text){
   return {raw:parts.map(p=>p.text||"").join("")};
 }
 
-async function viaClaude(env,frames,text){
+async function viaClaude(env,frames,text,o={}){
   const content=frames.map(data=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data}}));
   content.push({type:"text",text});
   let res;
   try{
-    res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":env.ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:env.ANALYZE_MODEL||"claude-sonnet-5-5",max_tokens:900,system:SYSTEM,messages:[{role:"user",content}]})});
+    res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":env.ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:env.ANALYZE_MODEL||"claude-sonnet-5-5",max_tokens:o.max||900,system:o.sys||SYSTEM,messages:[{role:"user",content}]})});
   }catch(e){return {err:"Gagal menghubungi layanan analisa"};}
   if(!res.ok){
     return {err:res.status===401?"API key salah atau belum aktif":res.status===429?"Terlalu banyak permintaan, coba lagi sebentar":res.status===529?"Layanan sedang sibuk, coba lagi":"Layanan analisa error ("+res.status+")"};
@@ -101,6 +101,39 @@ export async function onRequestPost({request,env}){
   if(Number(request.headers.get("content-length")||0)>8000000)return J({error:"Data terlalu besar"},413);
   const body=await request.json().catch(()=>null);
   if(!body||typeof body!=="object")return J({error:"bad body"},400);
+  if(body.mode==="poomsae_wt"){
+    const tel=body.telemetry;
+    if(!tel||typeof tel!=="object"||JSON.stringify(tel).length>60000)return J({error:"Data telemetri tidak valid"},400);
+    const dr=Array.isArray(body.durRange)&&body.durRange.length===2?body.durRange.map(x=>Math.max(1,Math.min(600,Number(x)||0))):[5,8];
+    const prompt=`PERAN & KONTEKS:
+Anda adalah Wasit Internasional World Taekwondo (WT) dan Pelatih Kepala Poomsae Kukkiwon. Anda akan menerima data telemetri biomekanik dalam format JSON yang diekstrak secara lokal dari video penampilan Poomsae (tanpa lampiran video).
+
+DATA JURUS:
+- Nama Jurus: ${String(body.jurus||"-").slice(0,60)}
+- Kategori / Sabuk: ${String(body.kategori||"-").slice(0,60)}
+
+TUGAS ANDA:
+1. Analisa seluruh log penyimpangan sudut sendi, durasi tempo, dan stabilitas keseimbangan yang tercatat pada data JSON di bawah.
+2. Konversikan setiap penyimpangan menjadi penilaian resmi World Taekwondo (WT):
+   - Accuracy (Maks 4.00): Kurangi -0.1 untuk penyimpangan sudut ringan (minor) dan -0.3 untuk kesalahan urutan, keseimbangan goyang berat, atau durasi gerakan lambat di luar standar ${dr[0]}–${dr[1]} detik (major).
+   - Presentation (Maks 6.00): Nilai Speed & Power (0–2.00), Rhythm & Tempo (0–2.00), dan Expression of Energy (0–2.00) berdasarkan data kecepatan puncak (peak velocity), konsistensi jeda antar gerakan, dan stabilitas postur.
+3. Buat tabel Log Kesalahan per Timestamp berisi: Timestamp, Urutan Gerakan, Kesalahan Biomekanik Spesifik (sebutkan angka sudut/penyimpangannya), dan Potongan Poin.
+4. Susun 3 Program Drill Korektif paling prioritas (Nama Drill, Target Otot/Sendi, Langkah Eksekusi, dan Set/Repetisi) untuk memperbaiki kesalahan terbesar pada data tersebut.
+
+DATA TELEMETRI JSON LOKAL:
+${JSON.stringify(tel)}
+
+Catatan: data ini estimasi dari pose tubuh; sebutkan keterbatasannya singkat. Jawab dalam bahasa ${body.lang==="en"?"Inggris":"Indonesia"}, format teks biasa dengan tabel berbasis teks (kolom dipisah " | "), tanpa markdown tebal.`;
+    const sys="Kamu wasit World Taekwondo dan pelatih Poomsae. Patuhi instruksi pengguna. Jangan mengidentifikasi orang atau mengomentari fisik. Bahasa ramah dan konstruktif, aman untuk anak.";
+    const o={sys,max:3000,plain:true};
+    const prov=env.ANALYZE_PROVIDER||(env.AI?"cf":env.ANTHROPIC_API_KEY?"claude":"gemini");
+    const out=prov==="cf"?await viaCF(env,[],prompt,o):prov==="claude"?await viaClaude(env,[],prompt,o):await viaGemini(env,[],prompt,o);
+    if(out.err)return J({error:out.err},502);
+    const report=String(out.raw||"").trim().slice(0,8000);
+    if(!report)return J({error:"Hasil analisa kosong, coba ulangi"},502);
+    await env.DB.prepare("INSERT OR REPLACE INTO docs(coll,id,data) VALUES('ai_usage',?,?)").bind(qid,JSON.stringify({n:used+1,day})).run();
+    return J({ok:true,report,left:Math.max(0,limit-used-1)});
+  }
   const frames=Array.isArray(body.frames)?body.frames:[];
   if(frames.length<4||frames.length>12||!frames.every(f=>typeof f==="string"&&f.length<900000&&/^[A-Za-z0-9+/=]+$/.test(f)))return J({error:"Gambar tidak valid (4-12 gambar)"},400);
   const mode=MODES[body.mode]?body.mode:"umum";
