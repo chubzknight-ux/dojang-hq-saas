@@ -406,6 +406,7 @@ function fmtEvalNote(val){
     if(an.knee!=null)det.push(T("Sudut lutut: ","Knee angle: ")+Math.round(an.knee)+"°");
     if(an.guard!=null)det.push(T("Guard terjaga: ","Guard held: ")+Math.round(an.guard*100)+"%");
     if(an.kpm!=null)det.push(T("Tempo: ","Pace: ")+an.kpm+T(" tendangan/menit"," kicks/min"));
+    if(an.wt)det.push("Poomsae WT"+(an.wt.j?" ("+an.wt.j+")":"")+": Accuracy "+an.wt.a+"/4, Presentation "+an.wt.p+"/6, Total "+an.wt.t+"/10");
   }
   if(!good.length)good.push(T("Terus semangat berlatih! 💪","Keep up the great training! 💪"));
   return`<div class="an-note"><div class="an-head"><span class="an-tag">🎥 ${T("Analisa Video","Video analysis")}</span>${mode?`<span>· ${mode}</span>`:""}${an.cnt>1?`<span>· ${an.cnt} video</span>`:""}</div>${sec("soft-good","🌟",T("Sudah baik","Doing well"),good)}${sec("soft-grow","🌱",an.src==="cloud"?T("Saran latihan","Training tips"):T("Perlu dilatih","To work on"),grow)}${det.length?`<details class="soft-d"><summary>${T("Lihat detail teknis","See technical details")}</summary><div>${esc(det.join(" · "))}</div></details>`:""}<div class="an-foot">${T("Estimasi otomatis, bukan penilaian resmi.","Automatic estimate, not an official assessment.")}</div></div>`;
@@ -2381,7 +2382,7 @@ function anaFrames(file,n){return new Promise((resolve,reject)=>{
       try{await v.play();v.pause()}catch(e){}
       const dur=v.duration;
       if(!isFinite(dur)||dur<2)throw new Error(T("Video terlalu pendek atau rusak","Video too short or broken"));
-      const n=Math.min(120,Math.max(12,Math.round(dur*4)));
+      const raw=mode==="__raw",n=raw?Math.min(240,Math.max(20,Math.round(dur*8))):Math.min(120,Math.max(12,Math.round(dur*4)));
       const sc=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
       const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),dets=[];
       for(let i=0;i<n;i++){
@@ -2398,6 +2399,7 @@ function anaFrames(file,n){return new Promise((resolve,reject)=>{
       let close=0;
       if(tracks.length>1){for(let i=0;i<n;i++){const ps=dets[i];if(ps.length<2)continue;let c=false;for(let a=0;a<ps.length&&!c;a++)for(let b2=a+1;b2<ps.length;b2++){if(Math.hypot(ps[a].b.cx-ps[b2].b.cx,ps[a].b.cy-ps[b2].b.cy)/Math.max(ps[a].b.h,ps[b2].b.h,0.15)<0.5){c=true;break}}if(c)close++}}
       const swapRisk=close/n>0.25;
+      if(raw)return {tracks,dur,ts:Array.from({length:n},(_,i)=>dur*(0.02+0.96*i/(n-1))),warn:swapRisk};
       return tracks.map(t=>{try{return{st:t.st,n:t.n,result:poseScore(t.pts,mode,t.st,dur),warn:swapRisk}}catch(e){return{st:t.st,n:t.n,error:e.message||String(e),warn:swapRisk}}});
     }finally{URL.revokeObjectURL(url)}
   }
@@ -2430,9 +2432,9 @@ function anaFrames(file,n){return new Promise((resolve,reject)=>{
   };
   // ===== ANALISA POOMSAE (standar penilaian World Taekwondo) =====
   // Telemetri sudut sendi, tempo, dan keseimbangan diekstrak di perangkat; video tidak diunggah.
-  const PM_JURUS=["Taegeuk 1 Jang","Taegeuk 2 Jang","Taegeuk 3 Jang","Taegeuk 4 Jang","Taegeuk 5 Jang","Taegeuk 6 Jang","Taegeuk 7 Jang","Taegeuk 8 Jang","Koryo","Keumgang","Taebaek","Pyongwon","Sipjin","Jitae","Chonkwon","Hansu","Ilyeo"];
+  const PM_JURUS=["Gibon 1 Jang","Gibon 2 Jang","Gibon 3 Jang","Taegeuk 1 Jang","Taegeuk 2 Jang","Taegeuk 3 Jang","Taegeuk 4 Jang","Taegeuk 5 Jang","Taegeuk 6 Jang","Taegeuk 7 Jang","Taegeuk 8 Jang","Koryo","Keumgang","Taebaek","Pyongwon","Sipjin","Jitae","Chonkwon","Hansu","Ilyeo"];
   const PM_DUR=[5,8];
-  const pmState={jurus:"Taegeuk 1 Jang",kat:"",ctx:"UKT",slow:"",kihap:"",busy:false,msg:"",err:"",tel:null,rep:null,ai:"",aiBusy:false,aiErr:""};
+  const pmState={free:false,saved:null,saveErr:"",multi:null,jurus:"Taegeuk 1 Jang",kat:"",ctx:"UKT",slow:"",kihap:"",busy:false,msg:"",err:"",tel:null,rep:null,ai:"",aiBusy:false,aiErr:""};
   const pmPrompt=(jurus,kat,tel,konteks)=>`PERAN & KONTEKS:
 Anda adalah Wasit Internasional World Taekwondo (WT) dan Pelatih Kepala Poomsae Kukkiwon. Anda akan menerima data telemetri biomekanik dalam format JSON yang diekstrak secara lokal dari video penampilan Poomsae (tanpa lampiran video).
 
@@ -2629,17 +2631,61 @@ ${JSON.stringify(tel)}`;
     return lis.slice(0,3).map(k=>pmDrills[k]);
   }
   const PM_TYPE={stance:"Kuda-kuda",asym:"Simetri",lean:"Postur",sway:"Keseimbangan",tempo:"Tempo",dur:"Durasi"};
-  function pmHtml(){
-    const st=S.find(x=>x.id===anaState.stu),rep=pmState.rep;
-    const kat=pmState.kat||(st&&st.b)||"";
-    const form=`<div class="sec"><h2>🏆 ${T("Analisa Poomsae (standar WT)","Poomsae Analysis (WT standard)")}</h2><p class="mu" style="margin:0 0 10px;font-size:13px">${T("Mengukur sudut sendi, tempo, dan keseimbangan dari video, lalu dikonversi ke nilai Accuracy (maks 4.00) dan Presentation (maks 6.00). Pilih murid dan video di atas. Kamera diam, seluruh badan dan wajah terlihat. Aturan durasi 5–8 detik hanya dipakai jika gerakan lambat wajib dipilih Ya.","Measures joint angles, tempo and balance from the video, then converts them to Accuracy (max 4.00) and Presentation (max 6.00). Choose the student and video above. Steady camera, full body and face visible. The 5–8 s duration rule applies only if mandatory slow motion is set to Yes.")}</p><div class="f"><div><label>${T("Nama jurus","Poomsae name")}</label><select id="pmJurus">${PM_JURUS.map(j=>`<option ${pmState.jurus===j?"selected":""}>${j}</option>`).join("")}</select></div><div><label>${T("Kategori / sabuk","Category / belt")}</label><input id="pmKat" value="${esc(kat)}" placeholder="${T("mis. Cadet, Sabuk Hijau","e.g. Cadet, Green Belt")}"></div><div><label>${T("Konteks","Context")}</label><select id="pmCtx"><option value="UKT" ${pmState.ctx==="UKT"?"selected":""}>UKT</option><option value="Simulasi Kejuaraan" ${pmState.ctx!=="UKT"?"selected":""}>${T("Simulasi Kejuaraan","Championship simulation")}</option></select></div><div><label>${T("Jumlah Kihap wajib","Required Kihap count")}</label><input id="pmKihap" type="number" min="0" max="10" inputmode="numeric" value="${esc(pmState.kihap)}" placeholder="${T("kosong = tidak dinilai","empty = not scored")}"></div><div><label>${T("Gerakan lambat wajib?","Mandatory slow motion?")}</label><select id="pmSlow"><option value="" ${pmState.slow===""?"selected":""}>${T("Tidak diketahui (aturan durasi tidak dipakai)","Unknown (duration rule not applied)")}</option><option value="1" ${pmState.slow==="1"?"selected":""}>${T("Ya (Taegeuk 5–8 / Sabuk Hitam)","Yes (Taegeuk 5–8 / Black Belt)")}</option><option value="0" ${pmState.slow==="0"?"selected":""}>${T("Tidak (tempo normal)","No (normal tempo)")}</option></select></div></div><p style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-pm="run" ${pmState.busy?"disabled":""}>${pmState.busy?"⏳ "+esc(pmState.msg):"🏆 "+T("Analisa Poomsae","Analyze Poomsae")}</button>${rep?`<button class="btn ghost" data-pm="copy">📋 ${T("Salin prompt + JSON untuk AI","Copy prompt + JSON for AI")}</button>`:""}</p>${pmState.err?`<span class="pill warn">${esc(pmState.err)}</span>`:""}</div>`;
-    if(!rep)return form;
+  function pmResultHtml(rep,o){
     const p=rep.pres;
     const kp=(v,l,m)=>`<div class="kpi"><strong>${v.toFixed(2)}</strong>${l} <span class="mu" style="font-size:11px">/ ${m}</span></div>`;
     const rows=rep.log.length?rep.log.map(e=>`<tr><td>${e.t.toFixed(1)}s</td><td>#${e.gerakan}</td><td><b>${esc(PM_TYPE[e.jenis]||e.jenis)}</b> – ${esc(e.detail)}</td><td style="color:var(--rd);white-space:nowrap">${e.potongan.toFixed(1)}</td></tr>`).join(""):`<tr><td colspan="4" class="mu">${T("Tidak ada penyimpangan terdeteksi.","No deviations detected.")}</td></tr>`;
     const dr=pmPickDrills(rep).map((d,i)=>`<div style="border-top:1px solid var(--ln);padding:12px 0"><b>${i+1}. ${esc(d.n)}</b><div class="mu" style="font-size:13px;margin:4px 0">🎯 ${esc(d.t)}</div><ol style="margin:6px 0 6px 18px;padding:0;font-size:14px">${d.s.map(x=>`<li>${esc(x)}</li>`).join("")}</ol><span class="pill">${esc(d.r)}</span></div>`).join("");
-    const ai=pmState.ai?`<div style="white-space:pre-wrap;font-size:14px;line-height:1.55;margin-top:8px">${esc(pmState.ai)}</div>`:"";
-    return form+`<div class="sec"><h2>📊 ${esc(pmState.jurus)} <span class="pill">${T("Keyakinan","Confidence")}: ${esc(rep.conf)}</span></h2><div class="kpis" style="margin:12px 0;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(rep.total,"Total",10)}${kp(rep.accuracy,"Accuracy",4)}${kp(rep.presentation,"Presentation",6)}</div><div class="kpis" style="margin:0 0 12px;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(p.speedPower,"Speed & Power",2)}${kp(p.rhythmTempo,"Rhythm & Tempo",2)}${kp(p.expression,"Expression",2)}</div><p class="mu" style="margin:0 0 10px;font-size:13px">🗣️ Kihap: ${pmKihapLine(rep.kihap)}</p><h3 style="margin:14px 0 6px">${T("Log Kesalahan per Timestamp","Error Log by Timestamp")}</h3><div style="overflow-x:auto"><table style="width:100%;font-size:13.5px"><thead><tr><th align="left">${T("Waktu","Time")}</th><th align="left">${T("Gerakan","Move")}</th><th align="left">${T("Kesalahan biomekanik","Biomechanical error")}</th><th align="left">${T("Poin","Pts")}</th></tr></thead><tbody>${rows}</tbody></table></div><h3 style="margin:16px 0 4px">${T("3 Drill Korektif Prioritas","Top 3 Corrective Drills")}</h3>${dr}<div class="note" style="margin-top:10px">${T("Ini estimasi otomatis dari pose tubuh, bukan penilaian resmi. Urutan gerakan tidak diverifikasi, dan Ambang sudut, jeda, dan goyang adalah perkiraan internal, belum dikalibrasi ke standar WT. Kihap dideteksi dari lonjakan suara pendek di audio video. Arah pandangan hanya perkiraan dari posisi hidung dan telinga.","This is an automatic estimate from body pose, not an official score. Move order is not verified, and Angle, pause and sway thresholds are internal estimates, not calibrated to WT standards. Kihap is detected from short loud bursts in the video audio. Gaze is only estimated from nose and ear positions.")}</div><p style="margin-top:12px"><button class="btn ghost" data-pm="ai" ${pmState.aiBusy?"disabled":""}>${pmState.aiBusy?"⏳ "+T("Menyusun laporan...","Writing report..."):"🧑‍⚖️ "+T("Laporan Wasit AI (Cloud, hanya kirim angka JSON)","AI Judge Report (Cloud, sends JSON numbers only)")}</button></p>${pmState.aiErr?`<span class="pill warn">${esc(pmState.aiErr)}</span>`:""}${ai}</div>`;
+    const ai=o.ai?`<div style="white-space:pre-wrap;font-size:14px;line-height:1.55;margin-top:8px">${esc(o.ai)}</div>`:"";
+    return `<div class="sec"><h2>📊 ${esc(o.title)} <span class="pill">${T("Keyakinan","Confidence")}: ${esc(rep.conf)}</span></h2><div class="kpis" style="margin:12px 0;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(rep.total,"Total",10)}${kp(rep.accuracy,"Accuracy",4)}${kp(rep.presentation,"Presentation",6)}</div><div class="kpis" style="margin:0 0 12px;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(p.speedPower,"Speed & Power",2)}${kp(p.rhythmTempo,"Rhythm & Tempo",2)}${kp(p.expression,"Expression",2)}</div><p class="mu" style="margin:0 0 10px;font-size:13px">🗣️ Kihap: ${pmKihapLine(rep.kihap)}</p><h3 style="margin:14px 0 6px">${T("Log Kesalahan per Timestamp","Error Log by Timestamp")}</h3><div style="overflow-x:auto"><table style="width:100%;font-size:13.5px"><thead><tr><th align="left">${T("Waktu","Time")}</th><th align="left">${T("Gerakan","Move")}</th><th align="left">${T("Kesalahan biomekanik","Biomechanical error")}</th><th align="left">${T("Poin","Pts")}</th></tr></thead><tbody>${rows}</tbody></table></div><h3 style="margin:16px 0 4px">${T("3 Drill Korektif Prioritas","Top 3 Corrective Drills")}</h3>${dr}<div class="note" style="margin-top:10px">${T("Ini estimasi otomatis dari pose tubuh, bukan penilaian resmi. Urutan gerakan tidak diverifikasi, dan Ambang sudut, jeda, dan goyang adalah perkiraan internal, belum dikalibrasi ke standar WT. Kihap dideteksi dari lonjakan suara pendek di audio video. Arah pandangan hanya perkiraan dari posisi hidung dan telinga.","This is an automatic estimate from body pose, not an official score. Move order is not verified, and Angle, pause and sway thresholds are internal estimates, not calibrated to WT standards. Kihap is detected from short loud bursts in the video audio. Gaze is only estimated from nose and ear positions.")}</div><p style="margin-top:12px"><button class="btn ghost" data-pm="${o.aiAct}" data-i="${o.i}" ${o.aiBusy?"disabled":""}>${o.aiBusy?"⏳ "+T("Menyusun laporan...","Writing report..."):"🧑‍⚖️ "+T("Laporan Wasit AI (Cloud, hanya kirim angka JSON)","AI Judge Report (Cloud, sends JSON numbers only)")}</button></p>${o.aiErr?`<span class="pill warn">${esc(o.aiErr)}</span>`:""}${ai}</div>`;
+  }
+  const pmToFive=t=>Math.max(1,Math.min(5,Math.round(t/2)));
+  async function pmSaveEval(items){
+    if(!db)throw new Error(T("Masukkan PIN terlebih dahulu","Enter PIN first"));
+    const date=ymd(),ex=findEvalDoc(date,AI_COACH),docId=ex?ex.id:date+"__"+slug(AI_COACH),ev={...((ex&&ex.ev)||{})},undo=[];
+    for(const it of items){
+      const st=it.st,old=ev[st.id]||null,m={};
+      SK_EVAL_FIELDS.forEach(f=>{const a0=Number(old&&old[f.key]);if(Number.isFinite(a0)&&a0>=1)m[f.key]=a0});
+      const sc=pmToFive(it.rep.total),a0=Number(old&&old.poomsae);
+      m.poomsae=Number.isFinite(a0)&&a0>=1?Math.round((a0+sc)/2):sc;
+      m.an={src:"device",m:"poomsae",cnt:(old&&old.an&&old.an.cnt)?old.an.cnt+1:(old?2:1),wt:{j:pmState.jurus,x:it.rep.ctx,a:it.rep.accuracy,p:it.rep.presentation,t:it.rep.total},tipsTxt:(d=>[T("Latihan prioritas: ","Top drill: ")+d.n+" ("+d.r+")"])(pmPickDrills(it.rep)[0])};
+      m.n="🎥 Analisa Poomsae WT";ev[st.id]=m;undo.push({sid:st.id,prev:old,name:st._n,score:sc});
+    }
+    await db.collection("evaluations").doc(docId).set({date,coach:AI_COACH,updatedAt:ymd()+" "+hm(),ev});
+    undo.forEach(u=>anaRecentAdd(u.sid));
+    return {docId,date,undo};
+  }
+  async function pmUndoEval(sv){
+    const ex=findEvalDoc(sv.date,AI_COACH),ev2={...((ex&&ex.ev)||{})},id0=ex?ex.id:sv.docId;
+    sv.undo.forEach(u=>{if(u.prev)ev2[u.sid]=u.prev;else delete ev2[u.sid]});
+    if(Object.keys(ev2).length)await db.collection("evaluations").doc(id0).set({date:sv.date,coach:AI_COACH,updatedAt:ymd()+" "+hm(),ev:ev2});else await db.collection("evaluations").doc(id0).delete();
+  }
+  function pmSavedHtml(){
+    const sv=pmState.saved;
+    if(pmState.saveErr)return `<div class="sec"><span class="pill warn">${esc(pmState.saveErr)}</span></div>`;
+    if(!sv)return "";
+    return `<div class="sec"><h2>✓ ${sv.undo.length} ${T("murid masuk ke Penilaian & Grafik Keterampilan","students saved to Evaluations & Skill Chart")}</h2>${sv.undo.map(u=>`<div class="soft-l">${esc(u.name)}: Poomsae ${u.score}/5 <span class="mu">(${T("dari total WT","from WT total")})</span></div>`).join("")}<p class="mu" style="font-size:12.5px;margin:8px 0">${T("Dicatat atas nama \"Analisa Video AI\". Nilai Poomsae 1–5 diambil dari total WT dibagi 2. Bisa dibatalkan di sini atau dihapus di menu Penilaian.","Recorded as \"Analisa Video AI\". Poomsae 1–5 is the WT total divided by 2. You can undo it here or delete it in Evaluations.")}</p><button class="btn ghost dn" data-pm="undo">↩️ ${T("Batalkan penilaian ini","Undo this evaluation")}</button></div>`;
+  }
+  async function pmAutoSave(items){
+    pmState.saved=null;pmState.saveErr="";
+    if(pmState.free||!items.length)return;
+    try{pmState.saved=await pmSaveEval(items)}catch(err){pmState.saveErr=T("Hasil belum tersimpan: ","Not saved: ")+(err.message||String(err))}
+  }
+  function pmMultiHtml(m){
+    const ok=m.filter(x=>x.rep).sort((a,b)=>b.rep.total-a.rep.total);
+    const rank=ok.length>1?`<div class="sec"><h2>🏅 ${T("Perbandingan murid","Student comparison")} — ${esc(pmState.jurus)}</h2><div style="overflow-x:auto"><table style="width:100%;font-size:13.5px"><thead><tr><th align="left">#</th><th align="left">${T("Murid","Student")}</th><th align="left">Accuracy</th><th align="left">Presentation</th><th align="left">Total</th></tr></thead><tbody>${ok.map((x,k)=>`<tr><td>${k+1}</td><td>${esc(x.st._n)}</td><td>${x.rep.accuracy.toFixed(2)}</td><td>${x.rep.presentation.toFixed(2)}</td><td><b>${x.rep.total.toFixed(2)}</b></td></tr>`).join("")}</tbody></table></div></div>`:"";
+    const warn=m.some(x=>x.warn)?`<div class="note">⚠️ ${T("Ada dua orang yang sering sangat berdekatan, jadi pelacakan bisa tertukar. Cek apakah angkanya masuk akal untuk tiap murid.","Two people were often very close together, so tracking may have swapped them. Check that each student's numbers look right.")}</div>`:"";
+    const cards=m.map((x,i)=>x.error?`<div class="sec"><h2>${esc(x.st._n)} <span class="pill">#${x.n}</span></h2><span class="pill warn">${esc(x.error)}</span></div>`:`<div style="margin-top:10px">${pmResultHtml(x.rep,{title:x.st._n+" · "+pmState.jurus,ai:x.ai,aiBusy:x.aiBusy,aiErr:x.aiErr,aiAct:"aiN",i})}<p style="margin:6px 0 0"><button class="btn ghost" data-pm="copyN" data-i="${i}">📋 ${T("Salin prompt + JSON","Copy prompt + JSON")} (${esc(x.st._n)})</button></p></div>`).join("");
+    return warn+rank+cards;
+  }
+  function pmHtml(){
+    const st=S.find(x=>x.id===anaState.stu),rep=pmState.rep;
+    const kat=pmState.kat||(st&&st.b)||"";
+    const form=`<div class="sec"><h2>🏆 ${T("Analisa Poomsae (standar WT)","Poomsae Analysis (WT standard)")}</h2><p class="mu" style="margin:0 0 10px;font-size:13px">${T("Mengukur sudut sendi, tempo, dan keseimbangan dari video, lalu dikonversi ke nilai Accuracy (maks 4.00) dan Presentation (maks 6.00). Pilih murid dan video di atas. Kamera diam, seluruh badan dan wajah terlihat. Aturan durasi 5–8 detik hanya dipakai jika gerakan lambat wajib dipilih Ya.","Measures joint angles, tempo and balance from the video, then converts them to Accuracy (max 4.00) and Presentation (max 6.00). Choose the student and video above. Steady camera, full body and face visible. The 5–8 s duration rule applies only if mandatory slow motion is set to Yes.")}</p><div class="f"><div><label>${T("Tujuan analisa","Analysis target")}</label><select id="pmTarget"><option value="student" ${!pmState.free?"selected":""}>${T("Murid → langsung masuk Penilaian","Student → saved straight to Evaluations")}</option><option value="free" ${pmState.free?"selected":""}>${T("Analisa bebas (tanpa murid, tidak disimpan)","Free analysis (no student, not saved)")}</option></select></div><div><label>${T("Nama jurus","Poomsae name")}</label><select id="pmJurus">${PM_JURUS.map(j=>`<option ${pmState.jurus===j?"selected":""}>${j}</option>`).join("")}</select></div><div><label>${T("Kategori / sabuk","Category / belt")}</label><input id="pmKat" value="${esc(kat)}" placeholder="${T("mis. Cadet, Sabuk Hijau","e.g. Cadet, Green Belt")}"></div><div><label>${T("Konteks","Context")}</label><select id="pmCtx"><option value="UKT" ${pmState.ctx==="UKT"?"selected":""}>UKT</option><option value="Simulasi Kejuaraan" ${pmState.ctx!=="UKT"?"selected":""}>${T("Simulasi Kejuaraan","Championship simulation")}</option></select></div><div><label>${T("Jumlah Kihap wajib","Required Kihap count")}</label><input id="pmKihap" type="number" min="0" max="10" inputmode="numeric" value="${esc(pmState.kihap)}" placeholder="${T("kosong = tidak dinilai","empty = not scored")}"></div><div><label>${T("Gerakan lambat wajib?","Mandatory slow motion?")}</label><select id="pmSlow"><option value="" ${pmState.slow===""?"selected":""}>${T("Tidak diketahui (aturan durasi tidak dipakai)","Unknown (duration rule not applied)")}</option><option value="1" ${pmState.slow==="1"?"selected":""}>${T("Ya (Taegeuk 5–8 / Sabuk Hitam)","Yes (Taegeuk 5–8 / Black Belt)")}</option><option value="0" ${pmState.slow==="0"?"selected":""}>${T("Tidak (tempo normal)","No (normal tempo)")}</option></select></div></div><p style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-pm="run" ${pmState.busy?"disabled":""}>${pmState.busy?"⏳ "+esc(pmState.msg):"🏆 "+T("Analisa Poomsae","Analyze Poomsae")}</button>${anaState.pickOn&&anaState.prev&&(pmState.free?anaState.sel.length:anaCount())?`<button class="btn" data-pm="runMulti" ${pmState.busy?"disabled":""}>${pmState.busy?"⏳ "+esc(pmState.msg):"👥 "+T("Analisa Poomsae ","Analyze Poomsae ")+(pmState.free?anaState.sel.length:anaCount())+" "+T("murid","student(s)")}</button>`:""}${rep?`<button class="btn ghost" data-pm="copy">📋 ${T("Salin prompt + JSON untuk AI","Copy prompt + JSON for AI")}</button>`:""}</p>${pmState.err?`<span class="pill warn">${esc(pmState.err)}</span>`:""}<p class="mu" style="font-size:12.5px;margin:10px 0 0">👥 ${T("Beberapa murid dalam satu video: pakai bagian \"Pilih orang di video\" di bawah, ketuk tiap murid, lalu klik Analisa Poomsae di sini. Suara Kihap tidak bisa dipisah per orang, jadi tidak dinilai saat lebih dari satu murid.","Several students in one video: use \"Pick people in the video\" below, tap each student, then click Analyze Poomsae here. Kihap sound cannot be separated per person, so it is not scored with more than one student.")}</p></div>`;
+    const multi=pmState.multi;let out="";
+    if(rep)out+=pmResultHtml(rep,{title:pmState.jurus,ai:pmState.ai,aiBusy:pmState.aiBusy,aiErr:pmState.aiErr,aiAct:"ai",i:""});
+    if(multi)out+=pmMultiHtml(multi);
+    return form+pmSavedHtml()+out;
   }
   const __anaOrig2=V.ana;
   V.ana=()=>{
@@ -2651,8 +2697,9 @@ ${JSON.stringify(tel)}`;
   document.addEventListener("change",e=>{
     const t=e.target;
     if(t.id==="anaMode"){setTimeout(draw,0);return;}
-    if(t.id==="pmCtx"||t.id==="pmSlow"||t.id==="pmKihap"){if(t.id==="pmCtx")pmState.ctx=t.value;else if(t.id==="pmSlow")pmState.slow=t.value;else pmState.kihap=String(t.value).slice(0,2);pmState.rep=null;pmState.ai="";draw();return;}
-    if(t.id==="pmJurus"){pmState.jurus=t.value;pmState.rep=null;pmState.ai="";try{localStorage.setItem("pm_jurus",t.value)}catch(x){}draw();return;}
+    if(t.id==="pmTarget"){pmState.free=t.value==="free";pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";pmState.ai="";draw();return;}
+    if(t.id==="pmCtx"||t.id==="pmSlow"||t.id==="pmKihap"){if(t.id==="pmCtx")pmState.ctx=t.value;else if(t.id==="pmSlow")pmState.slow=t.value;else pmState.kihap=String(t.value).slice(0,2);pmState.rep=null;pmState.multi=null;pmState.ai="";draw();return;}
+    if(t.id==="pmJurus"){pmState.jurus=t.value;pmState.rep=null;pmState.multi=null;pmState.ai="";try{localStorage.setItem("pm_jurus",t.value)}catch(x){}draw();return;}
   });
   document.addEventListener("input",e=>{if(e.target.id==="pmKat")pmState.kat=e.target.value.slice(0,60)});
   try{const j=localStorage.getItem("pm_jurus");if(j&&PM_JURUS.includes(j))pmState.jurus=j}catch(e){}
@@ -2662,17 +2709,60 @@ ${JSON.stringify(tel)}`;
     const a=b.dataset.pm,st=S.find(x=>x.id===anaState.stu),kat=pmState.kat||(st&&st.b)||"";
     if(a==="run"){
       if(pmState.busy)return;
-      if(!st)return toast(T("Pilih murid dulu","Select a student first"));
-      if(!st.foto)return toast(T("Murid ini belum punya izin foto/video","This student has no photo/video consent"));
+      if(!pmState.free){
+        if(!st)return toast(T("Pilih murid dulu","Select a student first"));
+        if(!st.foto)return toast(T("Murid ini belum punya izin foto/video","This student has no photo/video consent"));
+      }
       if(!anaState.file)return toast(T("Pilih video dulu","Choose a video first"));
-      pmState.busy=true;pmState.err="";pmState.rep=null;pmState.ai="";pmState.aiErr="";pmState.msg=T("Memulai...","Starting...");draw();
+      pmState.busy=true;pmState.err="";pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";pmState.ai="";pmState.aiErr="";pmState.msg=T("Memulai...","Starting...");draw();
       try{
         const {fr,dur}=await pmExtract(anaState.file,m=>{pmState.msg=m;const bt=document.querySelector('[data-pm="run"]');if(bt)bt.textContent="⏳ "+m});
         pmState.msg=T("Mendeteksi suara Kihap...","Detecting Kihap sound...");draw();
         const audio=await pmAudio(anaState.file);
         pmState.rep=pmTelemetry(fr,dur,{audio,kihapReq:pmState.kihap===""?null:Number(pmState.kihap),ctx:pmState.ctx,slow:pmState.slow==="1"?true:pmState.slow==="0"?false:null});
+        if(!pmState.free)await pmAutoSave([{st,rep:pmState.rep}]);
       }catch(err){pmState.err=err.message||String(err)}
       pmState.busy=false;pmState.msg="";draw();return;
+    }
+    if(a==="undo"){
+      const sv=pmState.saved;if(!sv)return;
+      try{await pmUndoEval(sv);pmState.saved=null;toast(T("Penilaian dibatalkan","Evaluation undone"))}catch(err){toast(T("Gagal membatalkan","Undo failed"))}
+      draw();return;
+    }
+    if(a==="runMulti"){
+      if(pmState.busy)return;
+      const free=pmState.free,asg=free?anaState.sel:anaState.sel.filter(x=>x.sid);
+      if(!asg.length||!anaState.file||!anaState.prev)return toast(free?T("Pilih video dan ketuk orangnya dulu","Choose a video and tap people first"):T("Pilih video, ketuk orang, dan pilih muridnya dulu","Choose a video, tap people and assign students first"));
+      const people=asg.map(x=>({n:x.n,st:S.find(y=>y.id===x.sid)||(free?{id:"",_n:T("Orang #","Person #")+x.n,b:""}:null),box:anaState.prev.people.find(p=>p.n===x.n)})).filter(x=>x.st&&x.box);
+      if(!free&&people.some(x=>!x.st.foto))return toast(T("Ada murid tanpa izin foto/video","A student has no photo/video consent"));
+      pmState.busy=true;pmState.err="";pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";pmState.msg=T("Memulai...","Starting...");draw();
+      try{
+        const rw=await poseAnalyzeMulti(anaState.file,"__raw",people,anaState.prev.t,m=>{pmState.msg=m;const bt=document.querySelector('[data-pm="runMulti"]');if(bt)bt.textContent="⏳ "+m});
+        const audio=people.length===1?await pmAudio(anaState.file):null;
+        pmState.multi=rw.tracks.map(t=>{
+          try{const fr=rw.ts.map((tt,i)=>({t:tt,p:t.pts[i]||null}));return {st:t.st,n:t.n,warn:rw.warn,rep:pmTelemetry(fr,rw.dur,{audio,kihapReq:pmState.kihap===""?null:Number(pmState.kihap),ctx:pmState.ctx,slow:pmState.slow==="1"?true:pmState.slow==="0"?false:null}),ai:"",aiBusy:false,aiErr:""}}
+          catch(err){return {st:t.st,n:t.n,warn:rw.warn,error:err.message||String(err)}}
+        });
+        if(!pmState.free)await pmAutoSave(pmState.multi.filter(x=>x.rep&&x.st&&x.st.id).map(x=>({st:x.st,rep:x.rep})));
+      }catch(err){pmState.err=err.message||String(err)}
+      pmState.busy=false;pmState.msg="";draw();return;
+    }
+    if(a==="copyN"){
+      const it=pmState.multi&&pmState.multi[+b.dataset.i];if(!it||!it.rep)return;
+      const txt=pmPrompt(pmState.jurus,(it.st&&it.st.b)||pmState.kat||"",it.rep.tel,pmState.ctx);
+      try{await navigator.clipboard.writeText(txt);toast(T("Prompt + JSON disalin, tempel ke AI","Prompt + JSON copied, paste into an AI"))}catch(x){prompt(T("Salin teks di bawah ini:","Copy the text below:"),txt)}
+      return;
+    }
+    if(a==="aiN"){
+      const it=pmState.multi&&pmState.multi[+b.dataset.i];if(!it||!it.rep||it.aiBusy)return;
+      it.aiBusy=true;it.aiErr="";draw();
+      try{
+        const r=await fetch("/api/analyze",{method:"POST",headers:__hdr({"content-type":"application/json"}),body:JSON.stringify({mode:"poomsae_wt",jurus:pmState.jurus,kategori:(it.st&&it.st.b)||pmState.kat||"",konteks:pmState.ctx,durRange:PM_DUR,telemetry:it.rep.tel,lang})});
+        const d=await r.json().catch(()=>({}));
+        if(!r.ok||!d.report)throw new Error(d.error||("HTTP "+r.status));
+        it.ai=d.report;
+      }catch(err){it.aiErr=err.message||String(err)}
+      it.aiBusy=false;draw();return;
     }
     if(a==="copy"&&pmState.rep){
       const txt=pmPrompt(pmState.jurus,kat,pmState.rep.tel,pmState.ctx);
