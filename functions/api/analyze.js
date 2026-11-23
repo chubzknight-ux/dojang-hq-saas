@@ -111,14 +111,28 @@ Anda adalah Wasit Internasional World Taekwondo (WT) dan Pelatih Kepala Poomsae 
 DATA JURUS:
 - Nama Jurus: ${String(body.jurus||"-").slice(0,60)}
 - Kategori / Sabuk: ${String(body.kategori||"-").slice(0,60)}
+- Konteks: ${body.konteks==="Simulasi Kejuaraan"?"Simulasi Kejuaraan":"UKT"}
 
 TUGAS ANDA:
 1. Analisa seluruh log penyimpangan sudut sendi, durasi tempo, dan stabilitas keseimbangan yang tercatat pada data JSON di bawah.
 2. Konversikan setiap penyimpangan menjadi penilaian resmi World Taekwondo (WT):
-   - Accuracy (Maks 4.00): Kurangi -0.1 untuk penyimpangan sudut ringan (minor) dan -0.3 untuk kesalahan urutan, keseimbangan goyang berat, atau durasi gerakan lambat di luar standar ${dr[0]}–${dr[1]} detik (major).
+   - Accuracy (Maks 4.00): Kurangi -0.1 untuk penyimpangan sudut ringan (minor) dan -0.3 untuk kesalahan urutan, keseimbangan goyang berat, atau durasi gerakan lambat di luar standar ${dr[0]}–${dr[1]} detik (major, hanya jika is_slow_motion: true).
    - Presentation (Maks 6.00): Nilai Speed & Power (0–2.00), Rhythm & Tempo (0–2.00), dan Expression of Energy (0–2.00) berdasarkan data kecepatan puncak (peak velocity), konsistensi jeda antar gerakan, dan stabilitas postur.
 3. Buat tabel Log Kesalahan per Timestamp berisi: Timestamp, Urutan Gerakan, Kesalahan Biomekanik Spesifik (sebutkan angka sudut/penyimpangannya), dan Potongan Poin.
 4. Susun 3 Program Drill Korektif paling prioritas (Nama Drill, Target Otot/Sendi, Langkah Eksekusi, dan Set/Repetisi) untuk memperbaiki kesalahan terbesar pada data tersebut.
+
+PARAMETER TAMBAHAN (OPSIONAL DI JSON):
+- head_yaw_aligned: Boolean, apakah arah hadap wajah/pandangan mata (gaze) mengarah tepat ke sasaran sebelum gerakan dikunci.
+- kihap_detected: Boolean, terdeteksi puncak suara Kihap pada step wajib.
+- is_slow_motion: Boolean, penanda apakah step tersebut memang gerakan lambat wajib (misal pada Taegeuk 5–8 / Poomsae Sabuk Hitam).
+
+ATURAN GUARDRAIL TAMBAHAN:
+1. Null-Safe (Anti-Halusinasi): Jika ada parameter yang bernilai null atau tidak tercantum di JSON, ABAIKAN parameter tersebut. Jangan mengarang angka atau memberi potongan poin.
+2. Validasi Gerakan Lambat: Aturan durasi 5.0 – 8.0 detik HANYA berlaku jika is_slow_motion: true. Jangan terapkan aturan ini pada gerakan tempo normal.
+3. Penilaian Gaze & Kihap: Gunakan head_yaw_aligned dan kihap_detected (jika tersedia) sebagai dasar utama menilai sub-kriteria Expression of Energy (0.00 – 2.00).
+4. Jangkar Angka Presentation (wajib dipatuhi agar skor realistis):
+   - Jika Konteks = UKT: rentang normal total Presentation adalah 4.20 – 5.10 (tiap sub-kriteria di kisaran 1.40 – 1.70).
+   - Jika Konteks = Simulasi Kejuaraan: gunakan standar ketat di kisaran 3.60 – 4.70. Skor total Presentation di atas 4.80 HANYA boleh diberikan jika peak_velocity konsisten tinggi hingga step terakhir, hip_wobble hampir nol, dan head_yaw_aligned selalu true.
 
 DATA TELEMETRI JSON LOKAL:
 ${JSON.stringify(tel)}
