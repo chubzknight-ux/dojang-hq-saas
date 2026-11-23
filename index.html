@@ -1158,14 +1158,6 @@ if(params.has("panduan")){
         if(!r.ok||!d.token){gateErr=d.error||(r.status===404?T("Fitur akun pelatih belum terpasang di server (file staff.js).","Coach account feature is not installed on the server (staff.js)."):T("Kode dojang, nama pengguna, atau kata sandi salah.","Wrong dojang code, username or password."));showPin(true);return;}
         gateErr="";CLUB_ID=cl;localStorage.setItem("dojang_club",cl);localStorage.setItem("dojang_token",d.token);localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_atok");__pin="";__atok="";__tok=d.token;ROLE="pelatih";window.__etag="";
         document.getElementById("pinInp").value="";
-  // Konteks untuk kalimat Analisa Video: nama depan, sabuk, usia, dan hasil video sebelumnya (tanggal lebih awal)
-  function anaCtx(st,date,mode){
-    const out={nm:String(st._n||st.n||"").trim().split(/\s+/)[0].slice(0,30),bi:Number.isFinite(Number(st.bi))?Number(st.bi):null,age:Number(st.a)||null};
-    let best=null;
-    (E||[]).forEach(e=>{const d=String((e&&e.date)||String((e&&e.id)||"").slice(0,10));if(!(d<date))return;const v=e.ev&&e.ev[st.id],a=v&&v.an;if(!a||a.src!=="device")return;const same=a.m===mode?1:0;if(!best||same>best.same||(same===best.same&&d>best.d))best={d,same,a};});
-    if(best){const a=best.a;out.prev={d:best.d,m:a.m||"",kh:a.kh!=null?a.kh:null,knee:a.knee!=null?a.knee:null,guard:a.guard!=null?a.guard:null,kpm:a.kpm!=null?a.kpm:null,kicks:a.kicks!=null?a.kicks:null};}
-    return out;
-  }
         __pull().catch(netErr);
       }catch(e){netErr();}
       return;
@@ -1183,6 +1175,14 @@ if(params.has("panduan")){
   document.getElementById("pinInp").onkeydown=e=>{if(e.key==="Enter")document.getElementById("pinBtn").click()};
   __pull().catch(()=>{});
   let __t1=0;setInterval(()=>{if(document.hidden)return;if(++__t1%__idleEvery(3,8)===0)__pullQ().catch(()=>{})},30000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)__pullQ().catch(()=>{})});
+  // Konteks untuk kalimat Analisa Video: nama depan, sabuk, usia, dan hasil video sebelumnya (tanggal lebih awal)
+  function anaCtx(st,date,mode){
+    const out={nm:String(st._n||st.n||"").trim().split(/\s+/)[0].slice(0,30),bi:Number.isFinite(Number(st.bi))?Number(st.bi):null,age:Number(st.a)||null};
+    let best=null;
+    (E||[]).forEach(e=>{const d=String((e&&e.date)||String((e&&e.id)||"").slice(0,10));if(!(d<date))return;const v=e.ev&&e.ev[st.id],a=v&&v.an;if(!a||a.src!=="device")return;const same=a.m===mode?1:0;if(!best||same>best.same||(same===best.same&&d>best.d))best={d,same,a};});
+    if(best){const a=best.a;out.prev={d:best.d,m:a.m||"",kh:a.kh!=null?a.kh:null,knee:a.knee!=null?a.knee:null,guard:a.guard!=null?a.guard:null,kpm:a.kpm!=null?a.kpm:null,kicks:a.kicks!=null?a.kicks:null};}
+    return out;
+  }
   const S=[];let UList=[],curUnit=localStorage.getItem("dojang_unit")||"all";
   let pendingLogoUri="",dataLogoPending="",anaState={stu:"",mode:"poomsae",engine:"device",file:null,res:null,busy:false,msg:"",err:""};
   const getUnits=()=>{const m=new Map();DEFAULT_UNITS.forEach(u=>m.set(slug(u),u));UList.forEach(u=>{if(u.name)m.set(slug(u.name),u.name)});S.forEach(s=>{if(s.unit)m.set(slug(s.unit),s.unit)});J.forEach(c=>{if(c.unit)m.set(slug(c.unit),c.unit)});if(!m.size)m.set("utama","Utama");const all=[...m.values()];const pu=ROLE!=="owner"&&PERM.units&&PERM.units.length?PERM.units.map(x=>String(x).trim().toLowerCase()):null;return pu?all.filter(u=>pu.includes(String(u).trim().toLowerCase())):all;};
