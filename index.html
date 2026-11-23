@@ -2432,7 +2432,7 @@ function anaFrames(file,n){return new Promise((resolve,reject)=>{
   // Telemetri sudut sendi, tempo, dan keseimbangan diekstrak di perangkat; video tidak diunggah.
   const PM_JURUS=["Taegeuk 1 Jang","Taegeuk 2 Jang","Taegeuk 3 Jang","Taegeuk 4 Jang","Taegeuk 5 Jang","Taegeuk 6 Jang","Taegeuk 7 Jang","Taegeuk 8 Jang","Koryo","Keumgang","Taebaek","Pyongwon","Sipjin","Jitae","Chonkwon","Hansu","Ilyeo"];
   const PM_DUR=[5,8];
-  const pmState={jurus:"Taegeuk 1 Jang",kat:"",ctx:"UKT",slow:"",busy:false,msg:"",err:"",tel:null,rep:null,ai:"",aiBusy:false,aiErr:""};
+  const pmState={jurus:"Taegeuk 1 Jang",kat:"",ctx:"UKT",slow:"",kihap:"",busy:false,msg:"",err:"",tel:null,rep:null,ai:"",aiBusy:false,aiErr:""};
   const pmPrompt=(jurus,kat,tel,konteks)=>`PERAN & KONTEKS:
 Anda adalah Wasit Internasional World Taekwondo (WT) dan Pelatih Kepala Poomsae Kukkiwon. Anda akan menerima data telemetri biomekanik dalam format JSON yang diekstrak secara lokal dari video penampilan Poomsae (tanpa lampiran video).
 
@@ -2473,6 +2473,33 @@ ${JSON.stringify(tel)}`;
     speed:{n:"Snap Teknik + Hoshinsul Ringan",t:"Bahu, tricep, pinggul (rotasi), betis",s:["Latih satu teknik (mis. momtong makki) dengan fokus mulai pelan, ledakan di ujung gerakan.","Gunakan karet resistensi ringan 10 repetisi, lalu tanpa karet 10 repetisi secepat mungkin.","Gabungkan ke 3 gerakan berurutan dengan kontras lambat-cepat."],r:"4 set × 10 repetisi per teknik"},
     dur:{n:"Pacing Durasi Jurus",t:"Kontrol tempo, kondisi aerobik",s:["Rekam satu segmen jurus dan ukur durasinya.","Targetkan "+PM_DUR[0]+"–"+PM_DUR[1]+" detik; sesuaikan jeda antar gerakan, bukan kecepatan teknik.","Ulangi sampai tiga percobaan berturut-turut masuk target."],r:"5 percobaan × 1 segmen"}
   };
+  // Deteksi Kihap dari audio video: ledakan suara pendek (0.08–0.7 dtk) jauh di atas kebisingan latar
+  function pmDetectBursts(d,sr){
+    const win=Math.max(1,Math.round(sr*0.02)),n=Math.floor(d.length/win),env=new Float32Array(n);
+    for(let i=0;i<n;i++){let a=0;for(let j=i*win;j<(i+1)*win;j++)a+=d[j]*d[j];env[i]=Math.sqrt(a/win)}
+    if(n<10)return null;
+    const s=[...env].sort((a,b)=>a-b),med=s[Math.floor(n*0.5)],p99=s[Math.floor(n*0.99)];
+    if(p99<0.004)return {silent:true,bursts:[]};
+    const thr=Math.max(med*6,p99*0.45,0.01),gap=3,bursts=[];let i=0;
+    while(i<n){
+      if(env[i]<thr){i++;continue}
+      let j=i,last=i;while(j+1<n&&j-last<=gap){j++;if(env[j]>=thr)last=j}
+      const dur=(last-i+1)*0.02;let pk=0;for(let k=i;k<=last;k++)pk=Math.max(pk,env[k]);
+      if(dur>=0.08&&dur<=0.7)bursts.push({t:Math.round(i*0.02*100)/100,dur:Math.round(dur*100)/100,peak:Math.round(pk*1000)/1000});
+      i=last+1;
+    }
+    return {silent:false,bursts};
+  }
+  async function pmAudio(file){
+    try{
+      if(!file||file.size>200e6)return null;
+      const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;
+      const ctx=new AC(),ab=await file.arrayBuffer();
+      const buf=await new Promise((res,rej)=>{const r=ctx.decodeAudioData(ab,res,rej);if(r&&r.then)r.then(res,rej)});
+      try{ctx.close&&ctx.close()}catch(e){}
+      return pmDetectBursts(buf.getChannelData(0),buf.sampleRate);
+    }catch(e){return null}
+  }
   async function pmExtract(file,progress){
     progress(T("Memuat model deteksi gerakan (sekali saja)...","Loading motion model (one time)..."));
     let lm=await loadPose(progress);
@@ -2560,27 +2587,38 @@ ${JSON.stringify(tel)}`;
     const contrast=cl((pv-q(rows.map(r=>r.ms),0.3))/Math.max(1,pv),0,1);
     const accuracy=r2(Math.max(0,4+log.reduce((s,e)=>s+e.potongan,0)));
     let tq=cv===null?0.5:1-cl(cv/0.8,0,1);if(slow===true&&(dur<PM_DUR[0]||dur>PM_DUR[1]))tq=Math.max(0,tq-0.15);
+    const aud=opt.audio&&!opt.audio.silent&&Array.isArray(opt.audio.bursts)?opt.audio.bursts:null;
+    const req=Number.isFinite(opt.kihapReq)&&opt.kihapReq>0?Math.round(opt.kihapReq):null;
+    const synced=aud?aud.filter(b=>peaks.some(p=>Math.abs(p.t-b.t)<=0.4)).length:null;
+    const kihapOk=aud&&req!==null?(aud.length>=req&&synced>=req):null;
+    const kq=aud&&req!==null?Math.min(1,synced/req):null;
     const headOk=yawFlags.length>=2?yawFlags.filter(Boolean).length/yawFlags.length:null;
     // Expression: gaze (jika ada) jadi dasar utama; kihap (audio) belum diukur di perangkat sehingga diabaikan (null)
-    const posture=0.5*stab+0.5*contrast,eq=headOk!==null?0.7*headOk+0.3*posture:posture;
+    const posture=0.5*stab+0.5*contrast,comps=[headOk,kq].filter(x=>x!==null),eq=comps.length?0.7*(comps.reduce((a,b)=>a+b,0)/comps.length)+0.3*posture:posture;
     const sq=cl(pv/5,0,1);
     const wob=(()=>{const xs=stillRows.map(r=>r.hp.x/tor0);return xs.length?Math.max(...xs)-Math.min(...xs):0})();
     const lastPk=peaks.slice(-3).map(p=>p.ms),medPk=q(peaks.map(p=>p.ms),0.5);
     const velConsistent=peaks.length>=4&&Math.min(...lastPk)>=0.7*medPk&&medPk>=2.5;
-    const elite=ctx==="Simulasi Kejuaraan"&&velConsistent&&swayN===0&&headOk===1;
+    const elite=ctx==="Simulasi Kejuaraan"&&velConsistent&&swayN===0&&headOk===1&&kihapOk!==false;
     // Jangkar skor Presentation: UKT tiap sub 1.40–1.70 (total 4.20–5.10); Simulasi 3.60–4.70 (total >4.80 hanya jika elite)
     const anc=qv=>ctx==="UKT"?cl(0.8+qv,0.5,1.7):cl(0.6+qv,0.4,elite?1.9:1.57);
     const pres={speedPower:r2(anc(sq)),rhythmTempo:r2(anc(tq)),expression:r2(anc(eq))};
     const presentation=r2(pres.speedPower+pres.rhythmTempo+pres.expression);
     const tel={konteks:ctx,durasi_detik:Math.round(dur*10)/10,frame_terdeteksi_persen:Math.round(valid*100),jumlah_gerakan_terdeteksi:peaks.length,
-      is_slow_motion:slow,head_yaw_aligned:headOk===null?null:headOk===1,head_yaw_aligned_persen:headOk===null?null:Math.round(headOk*100),kihap_detected:null,
+      is_slow_motion:slow,head_yaw_aligned:headOk===null?null:headOk===1,head_yaw_aligned_persen:headOk===null?null:Math.round(headOk*100),kihap_detected:kihapOk,kihap_wajib_jumlah:req,kihap_terdeteksi_jumlah:aud?aud.length:null,kihap_waktu_detik:aud&&aud.length?aud.map(b=>Math.round(b.t*10)/10):null,kihap_sinkron_dengan_gerakan:synced,
       standar_durasi_detik_jika_slow:PM_DUR,urutan_gerakan:"tidak diverifikasi (hanya kecepatan, bukan nama teknik)",
       ringkasan:{sudut_lutut_terendah_deg:kneeMin,kemiringan_badan_median_deg:leanMed,peak_velocity_torso_per_dtk:Math.round(pv*10)/10,peak_velocity_konsisten_hingga_akhir:velConsistent,hip_wobble:Math.round(wob*100)/100,konsistensi_jeda_cv:cv===null?null:Math.round(cv*100)/100,median_jeda_dtk:Math.round(mg*10)/10},
       log_penyimpangan:log.map(e=>({t:e.t,gerakan_ke:e.gerakan,jenis:e.jenis,tingkat:e.tingkat,detail:e.detail,potongan:e.potongan}))};
     // null-safe: buang parameter null supaya tidak dikarang AI
     const clean=o=>{if(Array.isArray(o))return o.map(clean);if(o&&typeof o==="object"){const r={};Object.keys(o).forEach(k=>{if(o[k]!==null&&o[k]!==undefined)r[k]=clean(o[k])});return r}return o};
     const telc=clean(tel);
-    return {tel:telc,log,accuracy,pres,presentation,total:r2(accuracy+presentation),ctx,conf:valid>=0.8?"tinggi":valid>=0.6?"sedang":"rendah"};
+    return {tel:telc,log,accuracy,pres,presentation,total:r2(accuracy+presentation),ctx,conf:valid>=0.8?"tinggi":valid>=0.6?"sedang":"rendah",kihap:{aud:aud?aud.length:null,silent:!!(opt.audio&&opt.audio.silent),req,synced,t:aud?aud.map(b=>Math.round(b.t*10)/10):[],ok:kihapOk}};
+  }
+  function pmKihapLine(k){
+    if(k.silent)return T("audio video senyap atau terlalu pelan, tidak dinilai.","video audio is silent or too quiet, not scored.");
+    if(k.aud===null)return T("audio tidak bisa dibaca dari video ini, tidak dinilai.","audio could not be read from this video, not scored.");
+    const w=k.aud?(T("terdeteksi ","detected ")+k.aud+"× ("+k.t.map(x=>x.toFixed(1)+"s").join(", ")+"), "+k.synced+T(" selaras dengan puncak gerakan"," in sync with movement peaks")):T("tidak terdeteksi","none detected");
+    return w+(k.req!==null?" · "+T("wajib ","required ")+k.req+" → "+(k.ok?"✓":"✗"):" · "+T("jumlah wajib belum diisi, tidak memengaruhi skor","required count not set, does not affect the score"));
   }
   function pmPickDrills(rep){
     const sum={};rep.log.forEach(e=>{sum[e.jenis]=(sum[e.jenis]||0)-e.potongan});
@@ -2594,14 +2632,14 @@ ${JSON.stringify(tel)}`;
   function pmHtml(){
     const st=S.find(x=>x.id===anaState.stu),rep=pmState.rep;
     const kat=pmState.kat||(st&&st.b)||"";
-    const form=`<div class="sec"><h2>🏆 ${T("Analisa Poomsae (standar WT)","Poomsae Analysis (WT standard)")}</h2><p class="mu" style="margin:0 0 10px;font-size:13px">${T("Mengukur sudut sendi, tempo, dan keseimbangan dari video, lalu dikonversi ke nilai Accuracy (maks 4.00) dan Presentation (maks 6.00). Pilih murid dan video di atas. Kamera diam, seluruh badan dan wajah terlihat. Aturan durasi 5–8 detik hanya dipakai jika gerakan lambat wajib dipilih Ya.","Measures joint angles, tempo and balance from the video, then converts them to Accuracy (max 4.00) and Presentation (max 6.00). Choose the student and video above. Steady camera, full body and face visible. The 5–8 s duration rule applies only if mandatory slow motion is set to Yes.")}</p><div class="f"><div><label>${T("Nama jurus","Poomsae name")}</label><select id="pmJurus">${PM_JURUS.map(j=>`<option ${pmState.jurus===j?"selected":""}>${j}</option>`).join("")}</select></div><div><label>${T("Kategori / sabuk","Category / belt")}</label><input id="pmKat" value="${esc(kat)}" placeholder="${T("mis. Cadet, Sabuk Hijau","e.g. Cadet, Green Belt")}"></div><div><label>${T("Konteks","Context")}</label><select id="pmCtx"><option value="UKT" ${pmState.ctx==="UKT"?"selected":""}>UKT</option><option value="Simulasi Kejuaraan" ${pmState.ctx!=="UKT"?"selected":""}>${T("Simulasi Kejuaraan","Championship simulation")}</option></select></div><div><label>${T("Gerakan lambat wajib?","Mandatory slow motion?")}</label><select id="pmSlow"><option value="" ${pmState.slow===""?"selected":""}>${T("Tidak diketahui (aturan durasi tidak dipakai)","Unknown (duration rule not applied)")}</option><option value="1" ${pmState.slow==="1"?"selected":""}>${T("Ya (Taegeuk 5–8 / Sabuk Hitam)","Yes (Taegeuk 5–8 / Black Belt)")}</option><option value="0" ${pmState.slow==="0"?"selected":""}>${T("Tidak (tempo normal)","No (normal tempo)")}</option></select></div></div><p style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-pm="run" ${pmState.busy?"disabled":""}>${pmState.busy?"⏳ "+esc(pmState.msg):"🏆 "+T("Analisa Poomsae","Analyze Poomsae")}</button>${rep?`<button class="btn ghost" data-pm="copy">📋 ${T("Salin prompt + JSON untuk AI","Copy prompt + JSON for AI")}</button>`:""}</p>${pmState.err?`<span class="pill warn">${esc(pmState.err)}</span>`:""}</div>`;
+    const form=`<div class="sec"><h2>🏆 ${T("Analisa Poomsae (standar WT)","Poomsae Analysis (WT standard)")}</h2><p class="mu" style="margin:0 0 10px;font-size:13px">${T("Mengukur sudut sendi, tempo, dan keseimbangan dari video, lalu dikonversi ke nilai Accuracy (maks 4.00) dan Presentation (maks 6.00). Pilih murid dan video di atas. Kamera diam, seluruh badan dan wajah terlihat. Aturan durasi 5–8 detik hanya dipakai jika gerakan lambat wajib dipilih Ya.","Measures joint angles, tempo and balance from the video, then converts them to Accuracy (max 4.00) and Presentation (max 6.00). Choose the student and video above. Steady camera, full body and face visible. The 5–8 s duration rule applies only if mandatory slow motion is set to Yes.")}</p><div class="f"><div><label>${T("Nama jurus","Poomsae name")}</label><select id="pmJurus">${PM_JURUS.map(j=>`<option ${pmState.jurus===j?"selected":""}>${j}</option>`).join("")}</select></div><div><label>${T("Kategori / sabuk","Category / belt")}</label><input id="pmKat" value="${esc(kat)}" placeholder="${T("mis. Cadet, Sabuk Hijau","e.g. Cadet, Green Belt")}"></div><div><label>${T("Konteks","Context")}</label><select id="pmCtx"><option value="UKT" ${pmState.ctx==="UKT"?"selected":""}>UKT</option><option value="Simulasi Kejuaraan" ${pmState.ctx!=="UKT"?"selected":""}>${T("Simulasi Kejuaraan","Championship simulation")}</option></select></div><div><label>${T("Jumlah Kihap wajib","Required Kihap count")}</label><input id="pmKihap" type="number" min="0" max="10" inputmode="numeric" value="${esc(pmState.kihap)}" placeholder="${T("kosong = tidak dinilai","empty = not scored")}"></div><div><label>${T("Gerakan lambat wajib?","Mandatory slow motion?")}</label><select id="pmSlow"><option value="" ${pmState.slow===""?"selected":""}>${T("Tidak diketahui (aturan durasi tidak dipakai)","Unknown (duration rule not applied)")}</option><option value="1" ${pmState.slow==="1"?"selected":""}>${T("Ya (Taegeuk 5–8 / Sabuk Hitam)","Yes (Taegeuk 5–8 / Black Belt)")}</option><option value="0" ${pmState.slow==="0"?"selected":""}>${T("Tidak (tempo normal)","No (normal tempo)")}</option></select></div></div><p style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-pm="run" ${pmState.busy?"disabled":""}>${pmState.busy?"⏳ "+esc(pmState.msg):"🏆 "+T("Analisa Poomsae","Analyze Poomsae")}</button>${rep?`<button class="btn ghost" data-pm="copy">📋 ${T("Salin prompt + JSON untuk AI","Copy prompt + JSON for AI")}</button>`:""}</p>${pmState.err?`<span class="pill warn">${esc(pmState.err)}</span>`:""}</div>`;
     if(!rep)return form;
     const p=rep.pres;
     const kp=(v,l,m)=>`<div class="kpi"><strong>${v.toFixed(2)}</strong>${l} <span class="mu" style="font-size:11px">/ ${m}</span></div>`;
     const rows=rep.log.length?rep.log.map(e=>`<tr><td>${e.t.toFixed(1)}s</td><td>#${e.gerakan}</td><td><b>${esc(PM_TYPE[e.jenis]||e.jenis)}</b> – ${esc(e.detail)}</td><td style="color:var(--rd);white-space:nowrap">${e.potongan.toFixed(1)}</td></tr>`).join(""):`<tr><td colspan="4" class="mu">${T("Tidak ada penyimpangan terdeteksi.","No deviations detected.")}</td></tr>`;
     const dr=pmPickDrills(rep).map((d,i)=>`<div style="border-top:1px solid var(--ln);padding:12px 0"><b>${i+1}. ${esc(d.n)}</b><div class="mu" style="font-size:13px;margin:4px 0">🎯 ${esc(d.t)}</div><ol style="margin:6px 0 6px 18px;padding:0;font-size:14px">${d.s.map(x=>`<li>${esc(x)}</li>`).join("")}</ol><span class="pill">${esc(d.r)}</span></div>`).join("");
     const ai=pmState.ai?`<div style="white-space:pre-wrap;font-size:14px;line-height:1.55;margin-top:8px">${esc(pmState.ai)}</div>`:"";
-    return form+`<div class="sec"><h2>📊 ${esc(pmState.jurus)} <span class="pill">${T("Keyakinan","Confidence")}: ${esc(rep.conf)}</span></h2><div class="kpis" style="margin:12px 0;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(rep.total,"Total",10)}${kp(rep.accuracy,"Accuracy",4)}${kp(rep.presentation,"Presentation",6)}</div><div class="kpis" style="margin:0 0 12px;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(p.speedPower,"Speed & Power",2)}${kp(p.rhythmTempo,"Rhythm & Tempo",2)}${kp(p.expression,"Expression",2)}</div><h3 style="margin:14px 0 6px">${T("Log Kesalahan per Timestamp","Error Log by Timestamp")}</h3><div style="overflow-x:auto"><table style="width:100%;font-size:13.5px"><thead><tr><th align="left">${T("Waktu","Time")}</th><th align="left">${T("Gerakan","Move")}</th><th align="left">${T("Kesalahan biomekanik","Biomechanical error")}</th><th align="left">${T("Poin","Pts")}</th></tr></thead><tbody>${rows}</tbody></table></div><h3 style="margin:16px 0 4px">${T("3 Drill Korektif Prioritas","Top 3 Corrective Drills")}</h3>${dr}<div class="note" style="margin-top:10px">${T("Ini estimasi otomatis dari pose tubuh, bukan penilaian resmi. Urutan gerakan tidak diverifikasi, dan Kihap (suara) belum diukur sehingga tidak dihitung. Arah pandangan hanya perkiraan dari posisi hidung dan telinga.","This is an automatic estimate from body pose, not an official score. Move order is not verified, and Kihap (sound) is not measured so it is not counted. Gaze is only estimated from nose and ear positions.")}</div><p style="margin-top:12px"><button class="btn ghost" data-pm="ai" ${pmState.aiBusy?"disabled":""}>${pmState.aiBusy?"⏳ "+T("Menyusun laporan...","Writing report..."):"🧑‍⚖️ "+T("Laporan Wasit AI (Cloud, hanya kirim angka JSON)","AI Judge Report (Cloud, sends JSON numbers only)")}</button></p>${pmState.aiErr?`<span class="pill warn">${esc(pmState.aiErr)}</span>`:""}${ai}</div>`;
+    return form+`<div class="sec"><h2>📊 ${esc(pmState.jurus)} <span class="pill">${T("Keyakinan","Confidence")}: ${esc(rep.conf)}</span></h2><div class="kpis" style="margin:12px 0;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(rep.total,"Total",10)}${kp(rep.accuracy,"Accuracy",4)}${kp(rep.presentation,"Presentation",6)}</div><div class="kpis" style="margin:0 0 12px;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(p.speedPower,"Speed & Power",2)}${kp(p.rhythmTempo,"Rhythm & Tempo",2)}${kp(p.expression,"Expression",2)}</div><p class="mu" style="margin:0 0 10px;font-size:13px">🗣️ Kihap: ${pmKihapLine(rep.kihap)}</p><h3 style="margin:14px 0 6px">${T("Log Kesalahan per Timestamp","Error Log by Timestamp")}</h3><div style="overflow-x:auto"><table style="width:100%;font-size:13.5px"><thead><tr><th align="left">${T("Waktu","Time")}</th><th align="left">${T("Gerakan","Move")}</th><th align="left">${T("Kesalahan biomekanik","Biomechanical error")}</th><th align="left">${T("Poin","Pts")}</th></tr></thead><tbody>${rows}</tbody></table></div><h3 style="margin:16px 0 4px">${T("3 Drill Korektif Prioritas","Top 3 Corrective Drills")}</h3>${dr}<div class="note" style="margin-top:10px">${T("Ini estimasi otomatis dari pose tubuh, bukan penilaian resmi. Urutan gerakan tidak diverifikasi, dan Ambang sudut, jeda, dan goyang adalah perkiraan internal, belum dikalibrasi ke standar WT. Kihap dideteksi dari lonjakan suara pendek di audio video. Arah pandangan hanya perkiraan dari posisi hidung dan telinga.","This is an automatic estimate from body pose, not an official score. Move order is not verified, and Angle, pause and sway thresholds are internal estimates, not calibrated to WT standards. Kihap is detected from short loud bursts in the video audio. Gaze is only estimated from nose and ear positions.")}</div><p style="margin-top:12px"><button class="btn ghost" data-pm="ai" ${pmState.aiBusy?"disabled":""}>${pmState.aiBusy?"⏳ "+T("Menyusun laporan...","Writing report..."):"🧑‍⚖️ "+T("Laporan Wasit AI (Cloud, hanya kirim angka JSON)","AI Judge Report (Cloud, sends JSON numbers only)")}</button></p>${pmState.aiErr?`<span class="pill warn">${esc(pmState.aiErr)}</span>`:""}${ai}</div>`;
   }
   const __anaOrig2=V.ana;
   V.ana=()=>{
@@ -2613,7 +2651,7 @@ ${JSON.stringify(tel)}`;
   document.addEventListener("change",e=>{
     const t=e.target;
     if(t.id==="anaMode"){setTimeout(draw,0);return;}
-    if(t.id==="pmCtx"||t.id==="pmSlow"){if(t.id==="pmCtx")pmState.ctx=t.value;else pmState.slow=t.value;pmState.rep=null;pmState.ai="";draw();return;}
+    if(t.id==="pmCtx"||t.id==="pmSlow"||t.id==="pmKihap"){if(t.id==="pmCtx")pmState.ctx=t.value;else if(t.id==="pmSlow")pmState.slow=t.value;else pmState.kihap=String(t.value).slice(0,2);pmState.rep=null;pmState.ai="";draw();return;}
     if(t.id==="pmJurus"){pmState.jurus=t.value;pmState.rep=null;pmState.ai="";try{localStorage.setItem("pm_jurus",t.value)}catch(x){}draw();return;}
   });
   document.addEventListener("input",e=>{if(e.target.id==="pmKat")pmState.kat=e.target.value.slice(0,60)});
@@ -2630,7 +2668,9 @@ ${JSON.stringify(tel)}`;
       pmState.busy=true;pmState.err="";pmState.rep=null;pmState.ai="";pmState.aiErr="";pmState.msg=T("Memulai...","Starting...");draw();
       try{
         const {fr,dur}=await pmExtract(anaState.file,m=>{pmState.msg=m;const bt=document.querySelector('[data-pm="run"]');if(bt)bt.textContent="⏳ "+m});
-        pmState.rep=pmTelemetry(fr,dur,{ctx:pmState.ctx,slow:pmState.slow==="1"?true:pmState.slow==="0"?false:null});
+        pmState.msg=T("Mendeteksi suara Kihap...","Detecting Kihap sound...");draw();
+        const audio=await pmAudio(anaState.file);
+        pmState.rep=pmTelemetry(fr,dur,{audio,kihapReq:pmState.kihap===""?null:Number(pmState.kihap),ctx:pmState.ctx,slow:pmState.slow==="1"?true:pmState.slow==="0"?false:null});
       }catch(err){pmState.err=err.message||String(err)}
       pmState.busy=false;pmState.msg="";draw();return;
     }
