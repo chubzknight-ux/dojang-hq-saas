@@ -2767,7 +2767,7 @@ ${JSON.stringify(tel)}`;
       pmState.rep=pmTelemetry(c.fr,c.dur,pmOpts(c.audio));
       if(!free)await pmAutoSave([{st,rep:pmState.rep}]);
     }catch(err){pmState.err=err.message||String(err)}
-    pmState.busy=false;pmState.msg="";draw();
+    pmState.busy=false;pmState.msg="";draw();uxScroll();
   }
   async function pmRunMulti(){
     const free=pmState.free,asg=free?anaState.sel:anaState.sel.filter(x=>x.sid);
@@ -2792,7 +2792,7 @@ ${JSON.stringify(tel)}`;
       });
       if(!free)await pmAutoSave(pmState.multi.filter(x=>x.rep&&x.st&&x.st.id).map(x=>({st:x.st,rep:x.rep})));
     }catch(err){pmState.err=err.message||String(err)}
-    pmState.busy=false;pmState.msg="";draw();
+    pmState.busy=false;pmState.msg="";draw();uxScroll();
   }
   // Analisa bebas untuk Kyorugi / Latihan umum: hasil ditampilkan saja, tidak disimpan
   async function fkRun(){
@@ -2810,7 +2810,7 @@ ${JSON.stringify(tel)}`;
         pmState.fk=[{name:String(pmState.fname||"").trim()||T("Peserta","Participant"),result:res}];
       }
     }catch(err){pmState.err=err.message||String(err)}
-    pmState.busy=false;pmState.msg="";draw();
+    pmState.busy=false;pmState.msg="";draw();uxScroll();
   }
   async function uxGo(){
     if(pmState.busy||anaState.busy)return;
@@ -2834,8 +2834,53 @@ ${JSON.stringify(tel)}`;
     const rows=anaState.sel.map(s=>{const c=ANA_COL[(s.n-1)%ANA_COL.length];return `<div class="row" style="gap:8px;flex-wrap:wrap"><span style="display:flex;align-items:center;gap:8px;flex:1;min-width:220px"><b style="color:${c}">#${s.n}</b>${free?`<input data-pmname="${s.n}" value="${esc(s.name||"")}" maxlength="40" placeholder="${T("Nama peserta (bebas diisi)","Participant name (free text)")}" style="flex:1">`:`<select data-anasel="${s.n}" style="flex:1"><option value="">— ${T("pilih murid","choose student")} —</option>${anaOptsHtml(s.sid||"")}</select>`}</span><button type="button" class="btn ghost dn" data-a="anaPickRm" data-i="${s.n}">✕</button></div>`}).join("");
     return `<p class="mu" style="margin:0 0 8px;font-size:13px">${T("Ketuk kotak orang yang ingin dianalisa, lalu isi namanya. Orang yang tidak diketuk tidak dianalisa.","Tap the box of each person to analyze, then fill in their name. People you don't tap are skipped.")}</p>${free?"":`<input id="anaFind" type="search" value="${esc(anaState.q)}" placeholder="🔎 ${T("Cari nama murid...","Search student name...")}" style="margin-bottom:8px">`}<div style="position:relative;display:inline-block;max-width:100%;line-height:0"><img src="${pv.url}" alt="" style="max-width:100%;max-height:420px;border-radius:10px;display:block">${marks}</div>${pv.people.length?"":`<p class="mu" style="margin-top:8px">${T("Tidak ada orang terdeteksi di titik ini. Geser penggeser ke saat seluruh badan terlihat.","No one detected here. Slide to a moment where the whole body is visible.")}</p>`}<div style="margin:10px 0"><label style="font-size:13px">${T("Titik di video","Point in video")}: ${Math.round(pv.t*100)}%</label><input type="range" id="anaT" min="0" max="100" value="${Math.round(pv.t*100)}" style="width:100%" ${anaState.busy?"disabled":""}></div>${rows||`<p class="mu" style="font-size:13px;margin:0">${T("Belum ada orang yang diketuk.","No one selected yet.")}</p>`}`;
   }
+  // ===== REDESAIN UI ANALISA VIDEO: pilihan besar, langkah ringkas, tombol aktif bila data lengkap =====
+  (()=>{const st=document.createElement("style");st.textContent=`
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg button{all:unset;box-sizing:border-box;flex:1 1 auto;min-width:96px;text-align:center;padding:11px 10px;border-radius:12px;border:1.5px solid var(--ln);cursor:pointer;font-weight:600;font-size:14px;line-height:1.25;color:var(--ink);background:var(--sf)}
+  .seg button[aria-pressed="true"]{border-color:var(--bl);background:var(--tint);color:var(--bl)}
+  .seg button:focus-visible{outline:2px solid var(--bl);outline-offset:2px}
+  .ux-l{display:block;font-size:12.5px;font-weight:700;letter-spacing:.02em;color:var(--mu);margin:14px 0 6px}
+  .ux-l:first-of-type{margin-top:0}
+  .upl{display:flex;align-items:center;gap:12px;padding:16px;border:2px dashed var(--ln);border-radius:14px;cursor:pointer;font-weight:600;position:relative}
+  .upl.on{border-style:solid;border-color:var(--ok);background:rgba(30,123,79,.08)}
+  .upl input{position:absolute;opacity:0;width:1px;height:1px}
+  .ux-step{display:flex;gap:10px;align-items:center;margin:0 0 12px;font-weight:800;font-size:17px}
+  .ux-step i{font-style:normal;flex:none;width:26px;height:26px;border-radius:50%;background:var(--bl);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px}
+  .ux-chk{margin:0 0 12px;padding:0;list-style:none;font-size:14px}.ux-chk li{padding:3px 0}
+  .ux-go{width:100%;box-sizing:border-box;text-align:center;padding:15px 18px;font-size:16px;border-radius:12px}
+  .ux-go[disabled]{opacity:.45;cursor:not-allowed}
+  details.ux-more{margin-top:14px}details.ux-more>summary{cursor:pointer;font-weight:700;font-size:13.5px;color:var(--bl);padding:6px 0}
+  .ux-chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+  `;document.head.appendChild(st)})();
+  const uxSeg=(k,opts,cur)=>`<div class="seg" role="group">${opts.map(o=>`<button type="button" data-seg data-k="${k}" data-v="${o[0]}" aria-pressed="${cur===o[0]}">${o[1]}</button>`).join("")}</div>`;
+  const uxScroll=()=>setTimeout(()=>{const el=document.getElementById("uxResults");if(el&&el.firstElementChild)el.scrollIntoView({behavior:"smooth",block:"start"})},120);
+  function uxSetPeople(v){
+    pmState.people=v;pmReset();anaState.sel=[];anaState.multi=null;anaState.res=null;
+    if(v==="multi"&&ROLE==="owner"){anaState.pickOn=true;if(anaState.file){anaPreview(anaState.prevT);return}}
+    else{anaState.pickOn=false;anaState.prev=null}
+    draw();
+  }
+  function uxSet(k,v){
+    const clr=()=>{pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";pmState.ai=""};
+    if(k==="anaMode"){anaState.mode=v;if(v!=="poomsae"&&pmState.source==="live"){pmState.source="upload";liveOff()}pmReset();anaState.res=null;anaState.multi=null;draw();return}
+    if(k==="pmTarget"){pmState.free=v==="free";pmReset();draw();return}
+    if(k==="uxSource"){pmState.source=v;liveOff();pmReset();draw();return}
+    if(k==="uxPeople"){uxSetPeople(v);return}
+    if(k==="pmCtx"){pmState.ctx=v;clr();draw();return}
+    if(k==="pmSlow"){pmState.slow=v;clr();draw();return}
+    if(k==="pmKihapM"){pmState.kihapManual=v;clr();draw();return}
+  }
+  document.addEventListener("click",e=>{const b=e.target.closest("[data-seg]");if(!b)return;e.stopImmediatePropagation();e.preventDefault();uxSet(b.dataset.k,b.dataset.v)},true);
+  function uxMissing(){
+    const free=pmState.free,multi=uxMulti(),m=[];
+    if(!anaState.file)m.push(T("Pilih video","Choose a video"));
+    if(multi){if(!(free?anaState.sel.length:anaCount()))m.push(free?T("Ketuk orang di gambar video","Tap people in the video frame"):T("Ketuk orang di gambar, lalu pilih muridnya","Tap people in the frame, then pick their student"))}
+    else if(!free&&!S.find(x=>x.id===anaState.stu))m.push(T("Pilih murid","Choose a student"));
+    return m;
+  }
   const UX_HELP={
-    poomsae:["Poomsae","Menilai jurus dengan aturan World Taekwondo (Pasal 16): Accuracy 4.00 (potongan resmi: Kihap dan berhenti ≥3 dtk yang bisa dideteksi) + Presentation 6.00 (nilai keseluruhan: Speed & Power, Rhythm & Tempo, Expression of Energy).","Scores the form by World Taekwondo rules (Art. 16): Accuracy 4.00 (official deductions detectable: Kihap and stops of 3 s or more) + Presentation 6.00 (overall: Speed & Power, Rhythm & Tempo, Expression of Energy)."],
+    poomsae:["Poomsae","Aturan World Taekwondo (Pasal 16): Accuracy 4.00 dan Presentation 6.00, termasuk Kihap dan berhenti ≥3 detik.","World Taekwondo rules (Art. 16): Accuracy 4.00 and Presentation 6.00, including Kihap and stops of 3+ seconds."],
     kyorugi:["Kyorugi","Mengukur posisi guard, jumlah dan tinggi tendangan saat sparring.","Measures guard position, kick count and kick height in sparring."],
     umum:["Latihan umum","Mengukur tinggi tendangan (Kelenturan) dan kedalaman kuda-kuda (Kekuatan).","Measures kick height (Flexibility) and stance depth (Strength)."]
   };
@@ -2843,25 +2888,47 @@ ${JSON.stringify(tel)}`;
     const orig=__anaOrig();
     if(orig.indexOf('id="anaMode"')<0)return orig;
     const pool=anaPool(),st=pool.find(x=>x.id===anaState.stu)||pool[0];if(st)anaState.stu=st.id;
-    const mode=anaState.mode,free=pmState.free,owner=ROLE==="owner",multi=uxMulti(),isP=mode==="poomsae",live=isP&&pmState.source==="live";
+    const mode=anaState.mode,free=pmState.free,owner=ROLE==="owner",isP=mode==="poomsae",live=isP&&pmState.source==="live",multi=!live&&uxMulti();
     if(!live&&(liveState.active||liveState.starting))setTimeout(liveOff,0);
     const mark='<div class="sec"><h2>✓',ix=orig.indexOf(mark),origRes=ix>=0?orig.slice(ix):"";
     const busy=pmState.busy||anaState.busy,msg=pmState.busy?pmState.msg:anaState.msg,err=pmState.err||anaState.err;
-    const nsel=free?anaState.sel.length:anaCount();
-    const h=UX_HELP[mode]||UX_HELP.umum;
-    const kat=pmState.kat||(!free&&st&&st.b)||"";
-    const intro=`<div class="top"><div><h1>${T("Analisa Video","Video Analysis")}</h1><span class="mu">${T("Unggah video, pilih jenis analisa, lalu klik Analisa Sekarang. Video diproses di perangkat ini dan tidak diunggah.","Upload a video, choose the analysis type, then click Analyze Now. The video is processed on this device and not uploaded.")} · ${esc(unitLabel())}</span></div></div>`;
-    const c1=`<div class="sec"><h2>① ${T("Video","Video")}</h2><input id="anaFile" type="file" accept="video/*">${anaState.file?`<p class="mu" style="margin:6px 0 0;font-size:13px">🎞️ ${esc(anaState.file.name)}</p>`:`<p class="mu" style="margin:6px 0 0;font-size:13px">${T("Tips: kamera diam, seluruh badan terlihat, 10–30 detik. Untuk Kihap, rekam dengan suara.","Tips: steady camera, full body visible, 10–30 seconds. Record with sound for Kihap.")}</p>`}</div>`;
-    const c2=`<div class="sec"><h2>② ${T("Jenis analisa","Analysis type")}</h2><div class="f" style="grid-template-columns:1fr"><div><label>${T("Jenis video","Video type")}</label><select id="anaMode">${[["poomsae","Poomsae"],["kyorugi","Kyorugi (sparring)"],["umum",T("Latihan umum","General training")]].map(m=>`<option value="${m[0]}" ${mode===m[0]?"selected":""}>${m[1]}</option>`).join("")}</select></div><div><label>${T("Hasil dipakai untuk","Result is used for")}</label><select id="pmTarget"><option value="student" ${!free?"selected":""}>${T("Murid → masuk Penilaian","Student → saved to Evaluations")}</option><option value="free" ${free?"selected":""}>${T("Analisa bebas (tidak disimpan)","Free analysis (not saved)")}</option></select></div>${isP?`<div><label>${T("Sumber","Source")}</label><select id="uxSource"><option value="upload" ${!live?"selected":""}>${T("Unggah video","Upload video")}</option><option value="live" ${live?"selected":""}>${T("Kamera live (landscape, beberapa orang)","Live camera (landscape, several people)")}</option></select></div>`:""}${owner&&!live?`<div><label>${T("Jumlah orang di video","People in the video")}</label><select id="uxPeople"><option value="one" ${!multi?"selected":""}>${T("Satu orang","One person")}</option><option value="multi" ${multi?"selected":""}>${T("Beberapa orang (ketuk di video)","Several people (tap in the video)")}</option></select></div>`:""}</div><p class="mu" style="margin:10px 0 0;font-size:13px">${isEN()?h[2]:h[1]}</p></div>`;
-    const who=multi?uxPickHtml():(free?`<div class="f" style="grid-template-columns:1fr"><div><label>${T("Nama peserta (opsional)","Participant name (optional)")}</label><input id="pmFname" value="${esc(pmState.fname)}" maxlength="40" placeholder="${T("mis. nama sendiri","e.g. your own name")}"></div></div>`:`<div><label>${T("Murid","Student")}</label>${anaStuHtml(st)}</div>`);
-    const c3=`<div class="sec"><h2>③ ${T("Peserta","Participant")}</h2>${who}</div>`;
-    const pset=isP?`<div class="f" style="grid-template-columns:1fr"><div><label>${T("Nama jurus","Poomsae name")}</label><select id="pmJurus">${PM_JURUS.map(j=>`<option ${pmState.jurus===j?"selected":""}>${j}</option>`).join("")}</select></div><div><label>${T("Kategori / sabuk","Category / belt")}</label><input id="pmKat" value="${esc(kat)}" placeholder="${T("mis. Cadet, Sabuk Hijau","e.g. Cadet, Green Belt")}"></div><div><label>${T("Konteks","Context")}</label><select id="pmCtx"><option value="UKT" ${pmState.ctx==="UKT"?"selected":""}>UKT</option><option value="Simulasi Kejuaraan" ${pmState.ctx!=="UKT"?"selected":""}>${T("Simulasi Kejuaraan","Championship simulation")}</option></select></div><div><label>${T("Ada gerakan lambat disengaja?","Intentional slow movements?")}</label><select id="pmSlow"><option value="" ${pmState.slow===""?"selected":""}>${T("Tidak diketahui (deteksi berhenti 3 dtk mati)","Unknown (3 s stop detection off)")}</option><option value="1" ${pmState.slow==="1"?"selected":""}>${T("Ya (mis. Taegeuk 6–8, sabuk hitam)","Yes (e.g. Taegeuk 6–8, black belt)")}</option><option value="0" ${pmState.slow==="0"?"selected":""}>${T("Tidak (deteksi berhenti 3 dtk aktif)","No (3 s stop detection on)")}</option></select></div></div><div class="f" style="grid-template-columns:1fr;margin-top:10px"><div><label>🗣️ ${T("Kihap resmi jurus ini","Official Kihap for this form")}</label><div class="note" style="margin:0">${PM_KIHAP[pmState.jurus]?esc(pmKihapInfo(pmState.jurus))+" · "+T("Kihap tidak ada atau salah momen = kesalahan mayor (−0.3).","missing or mistimed Kihap = major mistake (−0.3)."):T("Tidak ada ketentuan Kihap resmi untuk jurus ini (bukan poomsae WT), Kihap tidak dinilai.","No official Kihap rule for this form (not a WT poomsae), Kihap is not scored.")}</div></div><div><label>🗣️ ${T("Kihap terdengar? (koreksi manual)","Kihap heard? (manual override)")}</label><select id="pmKihapM"><option value="" ${pmState.kihapManual===""?"selected":""}>${T("Otomatis dari suara video","Automatic from video sound")}</option><option value="1" ${pmState.kihapManual==="1"?"selected":""}>${T("Ya, terdengar","Yes, heard")}</option><option value="0" ${pmState.kihapManual==="0"?"selected":""}>${T("Tidak ada Kihap","No Kihap")}</option></select></div></div><p class="mu" style="margin:8px 0 0;font-size:12.5px">${T("Rentang nilai Presentation untuk UKT dan Simulasi Kejuaraan adalah kalibrasi pelatih, bukan aturan WT. ","Presentation ranges for UKT and Championship simulation are coach calibration, not WT rules. ")}${T("Jumlah dan titik Kihap mengikuti tabel resmi per jurus (otomatis). Kihap dibaca dari audio video. Kalau suara tidak terbaca (video senyap atau terlalu ramai), pilih koreksi manual lalu klik Analisa lagi; hasil dihitung ulang dengan cepat.","Kihap count and positions follow the official per-form table (automatic). Kihap is read from the video audio. If the sound is not readable (silent or noisy), choose the manual override and click Analyze again; results are recomputed quickly.")}</p>`:(!free&&!multi?`<div class="f" style="grid-template-columns:1fr"><div><label>${T("Mesin analisa","Analysis engine")}</label><select id="anaEngine"><option value="device" ${anaState.engine!=="cloud"?"selected":""}>${T("Di perangkat ini (gratis, paling privat)","On this device (free, most private)")}</option><option value="cloud" ${anaState.engine==="cloud"?"selected":""}>${T("AI Cloud (cadangan, kirim gambar kecil)","AI Cloud (backup, sends small frames)")}</option></select></div></div>`:"");
-    const c4=pset?`<div class="sec"><h2>④ ${isP?T("Pengaturan Poomsae","Poomsae settings"):T("Lanjutan","Advanced")}</h2>${pset}</div>`:"";
-    const lbl=busy?"⏳ "+esc(msg):multi?"🎥 "+T("Analisa ","Analyze ")+nsel+" "+T("orang","people"):"🎥 "+T("Analisa Sekarang","Analyze Now");
-    const go=`<div class="sec"><button class="btn" data-pm="go" ${busy||(multi&&!nsel)?"disabled":""}>${lbl}</button>${busy&&anaState.busy?` <button class="btn ghost dn" data-a="anaCancel">${T("Batal","Cancel")}</button>`:""}${multi&&!nsel&&!busy?`<p class="mu" style="margin:8px 0 0;font-size:13px">${T("Ketuk orang di gambar dulu.","Tap people in the image first.")}</p>`:""}${err?`<p style="margin:10px 0 0"><span class="pill warn">${esc(err)}</span></p>`:""}</div>`;
-    const res=isP?pmResultsHtml():(free?fkHtml():origRes+(multi?"":"")+anaMultiHtml());
-    if(live)return need()+intro+liveCardHtml()+c2+c4+(pmState.err?`<div class="sec"><span class="pill warn">${esc(pmState.err)}</span></div>`:"")+res;
-    return need()+intro+c1+c2+c3+c4+go+res;
+    const h=UX_HELP[mode]||UX_HELP.umum,kat=pmState.kat||(!free&&st&&st.b)||"";
+    const miss=live?[]:uxMissing();
+    const intro=`<div class="top"><div><h1>🎥 ${T("Analisa Video","Video Analysis")}</h1><span class="mu">${T("Video diproses di perangkat ini, tidak diunggah.","Video is processed on this device, not uploaded.")} · ${esc(unitLabel())}</span></div></div>`;
+    // 1. apa yang dianalisa
+    const s1=`<div class="sec"><div class="ux-step"><i>1</i>${T("Apa yang dianalisa?","What to analyze?")}</div>
+      <label class="ux-l">${T("JENIS","TYPE")}</label>${uxSeg("anaMode",[["poomsae","🥋 Poomsae"],["kyorugi","🥊 Kyorugi"],["umum","🏃 "+T("Latihan umum","General")]],mode)}
+      <p class="mu" style="margin:8px 0 0;font-size:13px">${isEN()?h[2]:h[1]}</p>
+      ${isP?`<label class="ux-l">${T("SUMBER","SOURCE")}</label>${uxSeg("uxSource",[["upload","📁 "+T("Unggah video","Upload video")],["live","📷 "+T("Kamera live","Live camera")]],live?"live":"upload")}`:""}
+      <label class="ux-l">${T("HASIL UNTUK","RESULT FOR")}</label>${uxSeg("pmTarget",[["student","👤 "+T("Murid (masuk Penilaian)","Student (saved)")],["free","🆓 "+T("Analisa bebas","Free (not saved)")]],free?"free":"student")}
+      ${owner&&!live?`<label class="ux-l">${T("JUMLAH ORANG DI VIDEO","PEOPLE IN VIDEO")}</label>${uxSeg("uxPeople",[["one","👤 "+T("1 orang","1 person")],["multi","👥 "+T("Beberapa orang","Several")]],multi?"multi":"one")}`:""}
+    </div>`;
+    // 2. video / kamera
+    const s2=live?liveCardHtml():`<div class="sec"><div class="ux-step"><i>2</i>${T("Video","Video")}</div><label class="upl ${anaState.file?"on":""}" for="anaFile"><span style="font-size:26px">${anaState.file?"✅":"📁"}</span><span style="min-width:0"><span style="display:block;overflow-wrap:anywhere">${anaState.file?esc(anaState.file.name):T("Ketuk untuk memilih video","Tap to choose a video")}</span><span class="mu" style="display:block;font-size:12.5px;font-weight:400">${anaState.file?T("Ketuk untuk mengganti","Tap to change"):T("Kamera diam, seluruh badan terlihat, 10–30 detik. Rekam dengan suara untuk Kihap.","Steady camera, full body visible, 10–30 s. Record with sound for Kihap.")}</span></span><input id="anaFile" type="file" accept="video/*"></label></div>`;
+    // 3. peserta
+    const s3=live?"":`<div class="sec"><div class="ux-step"><i>3</i>${multi?T("Pilih orang di video","Pick people in the video"):T("Peserta","Participant")}</div>${multi?uxPickHtml():(free?`<label class="ux-l">${T("NAMA (OPSIONAL)","NAME (OPTIONAL)")}</label><input id="pmFname" value="${esc(pmState.fname)}" maxlength="40" placeholder="${T("mis. nama sendiri","e.g. your own name")}">`:`<label class="ux-l">${T("MURID","STUDENT")}</label>${anaStuHtml(st)}`)}</div>`;
+    // 4. pengaturan
+    const n4=live?3:4;
+    const poomsaeSet=`<label class="ux-l">${T("NAMA JURUS","POOMSAE")}</label><select id="pmJurus">${PM_JURUS.map(j=>`<option ${pmState.jurus===j?"selected":""}>${j}</option>`).join("")}</select>
+      <label class="ux-l">${T("KATEGORI / SABUK","CATEGORY / BELT")}</label><input id="pmKat" value="${esc(kat)}" placeholder="${T("mis. Cadet, Sabuk Hijau","e.g. Cadet, Green Belt")}">
+      <label class="ux-l">${T("KONTEKS","CONTEXT")}</label>${uxSeg("pmCtx",[["UKT","UKT"],["Simulasi Kejuaraan",T("Simulasi Kejuaraan","Championship sim")]],pmState.ctx==="UKT"?"UKT":"Simulasi Kejuaraan")}
+      <div class="note" style="margin:12px 0 0">🗣️ <b>${T("Kihap resmi","Official Kihap")}:</b> ${PM_KIHAP[pmState.jurus]?esc(pmKihapInfo(pmState.jurus))+". "+T("Kurang atau salah momen = −0.3.","Missing or mistimed = −0.3."):T("Tidak ada ketentuan resmi untuk jurus ini, Kihap tidak dinilai.","No official rule for this form; Kihap is not scored.")}</div>
+      <details class="ux-more"><summary>⚙️ ${T("Pengaturan lanjutan","Advanced settings")}</summary>
+        <label class="ux-l">${T("GERAKAN LAMBAT DISENGAJA?","INTENTIONAL SLOW MOVES?")}</label>${uxSeg("pmSlow",[["",T("Tidak tahu","Unknown")],["1",T("Ada","Yes")],["0",T("Tempo normal","Normal")]],pmState.slow)}
+        <p class="mu" style="margin:6px 0 0;font-size:12.5px">${T("Deteksi berhenti 3 detik (−0.3) hanya aktif jika dipilih Tempo normal.","The 3-second stop check (−0.3) is only active for Normal tempo.")}</p>
+        <label class="ux-l">${T("KIHAP TERDENGAR? (KOREKSI MANUAL)","KIHAP HEARD? (MANUAL)")}</label>${uxSeg("pmKihapM",[["",T("Otomatis","Auto")],["1",T("Ya","Yes")],["0",T("Tidak ada","None")]],pmState.kihapManual)}
+        <p class="mu" style="margin:6px 0 0;font-size:12.5px">${T("Pakai kalau suara tidak terbaca otomatis (video senyap atau ramai). Rentang nilai Presentation UKT/Kejuaraan adalah kalibrasi pelatih, bukan aturan WT.","Use if the sound is not read automatically (silent or noisy video). Presentation ranges for UKT/Championship are coach calibration, not WT rules.")}</p>
+      </details>`;
+    const engineSet=(!isP&&!free&&!multi)?`<details class="ux-more"><summary>⚙️ ${T("Pengaturan lanjutan","Advanced settings")}</summary><label class="ux-l">${T("MESIN ANALISA","ENGINE")}</label><select id="anaEngine"><option value="device" ${anaState.engine!=="cloud"?"selected":""}>${T("Di perangkat ini (gratis, paling privat)","On this device (free, most private)")}</option><option value="cloud" ${anaState.engine==="cloud"?"selected":""}>${T("AI Cloud (cadangan, kirim gambar kecil)","AI Cloud (backup, sends small frames)")}</option></select></details>`:"";
+    const s4=isP?`<div class="sec"><div class="ux-step"><i>${n4}</i>${T("Pengaturan Poomsae","Poomsae settings")}</div>${poomsaeSet}</div>`:(engineSet?`<div class="sec">${engineSet}</div>`:"");
+    // 5. mulai
+    const who=free?(multi?T("Analisa bebas","Free analysis"):(pmState.fname||T("Analisa bebas","Free analysis"))):(multi?T("Beberapa murid","Several students"):(st?st._n:""));
+    const chips=`<div class="ux-chips"><span class="pill">${esc(h[0])}</span>${isP?`<span class="pill">${esc(pmState.jurus)}</span><span class="pill">${pmState.ctx==="UKT"?"UKT":T("Kejuaraan","Championship")}</span>`:""}${who?`<span class="pill">${esc(who)}</span>`:""}</div>`;
+    const chk=`<ul class="ux-chk"><li>${anaState.file?"✅":"⬜"} ${T("Video","Video")}</li><li>${(multi?(free?anaState.sel.length:anaCount())>0:(free||!!st))?"✅":"⬜"} ${T("Peserta","Participant")}</li></ul>`;
+    const go=live?"":`<div class="sec"><div class="ux-step"><i>${isP?5:4}</i>${T("Mulai analisa","Start")}</div>${chips}${chk}<button class="btn ux-go" data-pm="go" ${busy||miss.length?"disabled":""}>${busy?"⏳ "+esc(msg):"🎥 "+T("Analisa Sekarang","Analyze Now")}</button>${miss.length&&!busy?`<p class="mu" style="margin:8px 0 0;font-size:13px;text-align:center">${T("Belum bisa mulai: ","Can't start yet: ")}${esc(miss.join(", "))}</p>`:""}${busy&&anaState.busy?`<p style="margin:10px 0 0;text-align:center"><button class="btn ghost dn" data-a="anaCancel">${T("Batal","Cancel")}</button></p>`:""}${err?`<p style="margin:10px 0 0"><span class="pill warn">${esc(err)}</span></p>`:""}</div>`;
+    const liveErr=live&&pmState.err?`<div class="sec"><span class="pill warn">${esc(pmState.err)}</span></div>`:"";
+    const res=isP?pmResultsHtml():(free?fkHtml():origRes+anaMultiHtml());
+    return need()+intro+s1+s2+s3+s4+go+liveErr+`<div id="uxResults">${res}</div>`;
   };
   // ===== PENILAIAN LIVE: kamera (landscape), beberapa orang, mikrofon untuk Kihap =====
   Object.assign(pmState,{source:"upload"});
@@ -3039,7 +3106,7 @@ ${JSON.stringify(tel)}`;
     pmState.multi=picks.map((p,i)=>{const st=stubOf(p);try{return {st,n:p.id,rep:pmTelemetry(p.tr.fr,dur,pmOpts(aud[i])),ai:"",aiBusy:false,aiErr:""}}catch(err){return {st,n:p.id,error:err.message||String(err)}}});
     liveOff();
     if(!pmState.free)await pmAutoSave(pmState.multi.filter(x=>x.rep&&x.st&&x.st.id).map(x=>({st:x.st,rep:x.rep})));
-    draw();
+    draw();uxScroll();
   }
   function liveCardHtml(){
     const L=liveState,free=pmState.free,ids=Object.keys(L.sel),portrait=false;
@@ -3056,7 +3123,7 @@ ${JSON.stringify(tel)}`;
       b+=`<p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap">${L.rec?`<button class="btn dn" data-pm="liveFin">⏹ ${T("Selesai & nilai","Finish & score")}</button>`:`<button class="btn" data-pm="liveRec">⏺ ${T("Mulai rekam","Start")} ${ids.length?"("+ids.length+" "+T("orang","people")+")":""}</button><button class="btn ghost" data-pm="liveOff">${T("Matikan kamera","Turn off camera")}</button>`}</p>`;
     }
     if(L.err)b+=`<p style="margin:10px 0 0"><span class="pill warn">${esc(L.err)}</span></p>`;
-    return `<div class="sec"><h2>① ${T("Kamera live","Live camera")}</h2>${b}</div>`;
+    return `<div class="sec"><div class="ux-step"><i>2</i>📷 ${T("Kamera live","Live camera")}</div>${b}</div>`;
   }
   document.addEventListener("input",e=>{const t=e.target;if(t.dataset&&t.dataset.livename!==undefined){const x=liveState.sel[t.dataset.livename];if(x)x.name=t.value.slice(0,40)}});
   document.addEventListener("change",e=>{
