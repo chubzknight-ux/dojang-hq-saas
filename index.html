@@ -2865,7 +2865,7 @@ ${JSON.stringify(tel)}`;
     const clr=()=>{pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";pmState.ai=""};
     if(k==="anaMode"){anaState.mode=v;if(v!=="poomsae"&&pmState.source==="live"){pmState.source="upload";liveOff()}pmReset();anaState.res=null;anaState.multi=null;draw();return}
     if(k==="pmTarget"){pmState.free=v==="free";pmReset();draw();return}
-    if(k==="uxSource"){pmState.source=v;liveOff();pmReset();draw();return}
+    if(k==="uxSource"){pmState.source=v;liveOff();pmReset();if(v==="live")loadPose(()=>{}).catch(()=>{});draw();return}
     if(k==="uxPeople"){uxSetPeople(v);return}
     if(k==="pmCtx"){pmState.ctx=v;clr();draw();return}
     if(k==="pmSlow"){pmState.slow=v;clr();draw();return}
@@ -2932,37 +2932,69 @@ ${JSON.stringify(tel)}`;
   };
   // ===== PENILAIAN LIVE: kamera (landscape), beberapa orang, mikrofon untuk Kihap =====
   Object.assign(pmState,{source:"upload"});
-  const liveState={active:false,starting:false,rec:false,stream:null,video:null,cv:null,wrap:null,lm:null,tracks:[],nextId:1,sel:{},bursts:[],t0:0,msg:"",err:"",hasMic:false,mic:{ring:[],on:false,start:0,last:0,pk:0,peak:0},loopT:0,micT:0,ac:null,an:null,buf:null,wake:null,offCount:0};
+  const liveState={active:false,starting:false,rec:false,stream:null,video:null,cv:null,wrap:null,lm:null,tracks:[],nextId:1,sel:{},bursts:[],t0:0,msg:"",err:"",hasMic:false,runId:0,modelReady:false,modelErr:"",derr:0,mic:{ring:[],on:false,start:0,last:0,pk:0,peak:0},loopT:0,micT:0,ac:null,an:null,buf:null,wake:null,offCount:0};
   const LIVE_SKEL=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
   const liveEl=id=>document.getElementById(id);
   // Sesuaikan bingkai dengan arah kamera sebenarnya (portrait atau landscape) supaya gambar tidak melar dan kotak orang tepat
   function liveFit(W,w,h){if(!W||!w||!h)return;W.style.aspectRatio=w+" / "+h;W.style.width="min(100%, calc(68vh * "+(w/h).toFixed(4)+"))"}
   function liveAttach(){const L=liveState;if(!L.active||!L.wrap)return;const h=liveEl("liveHost");if(h&&L.wrap.parentNode!==h){h.appendChild(L.wrap);try{L.video.play()}catch(e){}}}
   new MutationObserver(()=>{if(liveState.active&&liveState.wrap&&!liveState.wrap.isConnected)liveAttach()}).observe(document.body,{childList:true,subtree:true});
-  async function liveOn(){
-    const L=liveState;if(L.active||L.starting)return;
-    L.starting=true;L.err="";L.msg=T("Meminta izin kamera...","Requesting camera permission...");pmReset();draw();
-    const say=m=>{L.msg=m;const e=liveEl("liveMsg");if(e)e.textContent=m};
-    try{
-      if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error(T("Kamera tidak didukung di browser ini. Buka lewat Safari/Chrome terbaru dengan HTTPS.","Camera is not supported in this browser. Use a recent Safari/Chrome over HTTPS."));
-      const vc={facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}};
-      let stream;
-      try{stream=await navigator.mediaDevices.getUserMedia({video:vc,audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})}
-      catch(e1){
-        try{stream=await navigator.mediaDevices.getUserMedia({video:vc,audio:false})}
-        catch(e2){throw new Error((e2&&(e2.name==="NotAllowedError"||e2.name==="SecurityError"))?T("Izin kamera ditolak. Aktifkan izin kamera untuk situs ini di pengaturan browser, lalu coba lagi.","Camera permission denied. Enable camera access for this site in browser settings, then try again."):T("Kamera tidak bisa dibuka: ","Cannot open the camera: ")+((e2&&e2.message)||e2))}
+  const liveMsgSet=m=>{liveState.msg=m;const e=liveEl("liveMsg");if(e)e.textContent=m};
+  const liveSleep=ms=>new Promise(r=>setTimeout(r,ms));
+  // Model dimuat di belakang layar dengan 3x percobaan otomatis; kamera tetap tampil selama itu
+  async function liveLoadModel(){
+    const L=liveState,id=L.runId;
+    L.modelErr="";L.modelReady=false;L.lm=null;
+    for(let i=1;i<=3;i++){
+      if(L.runId!==id||!L.active)return;
+      try{
+        liveMsgSet(T("Memuat model deteksi gerakan","Loading motion model")+(i>1?" ("+i+"/3)":"")+"...");
+        const lm=await loadPose(m=>{if(L.runId===id)liveMsgSet(m)});
+        try{await lm.setOptions({numPoses:6})}catch(e){}
+        if(L.runId!==id||!L.active)return;
+        L.lm=lm;L.modelReady=true;L.modelErr="";L.derr=0;liveMsgSet("");draw();liveAttach();return;
+      }catch(e){
+        if(L.runId!==id)return;
+        _poseLm=null;L.modelErr=(e&&e.message)||String(e);
+        if(i<3)await liveSleep(1500*i);
       }
-      say(T("Memuat model deteksi gerakan...","Loading motion model..."));
-      const lm=await loadPose(say);
-      try{await lm.setOptions({numPoses:6})}catch(e){}
-      const v=document.createElement("video");v.muted=true;v.playsInline=true;v.autoplay=true;v.srcObject=stream;
-      await new Promise(res=>{if(v.readyState>=1)res();else v.onloadedmetadata=res});
-      try{await v.play()}catch(e){}
-      const cv=document.createElement("canvas");cv.width=v.videoWidth||1280;cv.height=v.videoHeight||720;
+    }
+    if(L.runId===id&&L.active){draw();liveAttach()}
+  }
+  function liveErrMsg(e){
+    const n=e&&e.name,m=(e&&e.message)||String(e);
+    if(n==="NotAllowedError"||n==="SecurityError")return T("Izin kamera ditolak. Aktifkan izin kamera untuk situs ini di pengaturan browser, lalu tekan Nyalakan kamera lagi.","Camera permission denied. Enable camera access for this site in browser settings, then try again.");
+    if(n==="NotFoundError"||n==="OverconstrainedError")return T("Kamera tidak ditemukan di perangkat ini.","No camera found on this device.");
+    if(n==="NotReadableError"||n==="AbortError")return T("Kamera sedang dipakai aplikasi lain atau tidak bisa dibuka. Tutup aplikasi yang memakai kamera, lalu coba lagi.","The camera is in use by another app or cannot be opened. Close other camera apps and try again.");
+    return T("Kamera tidak bisa dibuka: ","Cannot open the camera: ")+m;
+  }
+  async function liveOn(){
+    const L=liveState;
+    if(L.active)return;
+    if(L.starting)liveOff(); // dipencet lagi saat macet: mulai ulang bersih, tanpa refresh
+    const id=++L.runId;
+    L.starting=true;L.err="";L.modelErr="";L.msg=T("Meminta izin kamera...","Requesting camera permission...");pmReset();draw();
+    const gone=()=>L.runId!==id;
+    let stream=null;
+    try{
+      if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error(T("Kamera tidak didukung di sini. Buka lewat Safari/Chrome terbaru dengan alamat HTTPS.","Camera is not supported here. Use a recent Safari/Chrome over HTTPS."));
+      const vc={facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}};
+      const tries=[{video:vc,audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}},{video:vc,audio:false},{video:true,audio:false}];
+      let lastErr=null;
+      for(const c of tries){
+        try{stream=await _tmo(navigator.mediaDevices.getUserMedia(c),60000,"timeout");lastErr=null;break}catch(e){lastErr=e;if(gone())return}
+      }
+      if(gone()){try{stream&&stream.getTracks().forEach(t=>t.stop())}catch(e){}return}
+      if(!stream)throw lastErr||new Error("no stream");
+      // elemen video diletakkan di DOM (tersembunyi) dulu supaya iOS/Safari benar-benar memutar gambar
+      const v=document.createElement("video");v.muted=true;v.defaultMuted=true;v.playsInline=true;v.autoplay=true;v.setAttribute("playsinline","");v.setAttribute("muted","");v.srcObject=stream;
+      const cv=document.createElement("canvas");cv.width=1280;cv.height=720;
       cv.style.cssText="position:absolute;left:0;top:0;width:100%;height:100%;touch-action:manipulation";
       v.style.cssText="width:100%;height:100%;display:block;object-fit:fill;background:#000";
       const wrap=document.createElement("div");wrap.style.cssText="position:relative;line-height:0;background:#000;border-radius:10px;overflow:hidden;margin:0 auto";
-      wrap.appendChild(v);wrap.appendChild(cv);liveFit(wrap,cv.width,cv.height);
+      wrap.appendChild(v);wrap.appendChild(cv);
+      let hold=liveEl("liveHold");if(!hold){hold=document.createElement("div");hold.id="liveHold";hold.style.cssText="position:fixed;left:-10000px;top:0;width:320px;height:240px;overflow:hidden";document.body.appendChild(hold)}
+      hold.appendChild(wrap);
       cv.addEventListener("click",ev=>{
         if(L.rec)return;
         const r=cv.getBoundingClientRect(),x=(ev.clientX-r.left)/r.width,y=(ev.clientY-r.top)/r.height;
@@ -2971,13 +3003,22 @@ ${JSON.stringify(tel)}`;
         if(L.sel[hit.id])delete L.sel[hit.id];else L.sel[hit.id]={name:"",sid:""};
         draw();
       });
-      Object.assign(L,{stream,video:v,cv,wrap,lm,tracks:[],nextId:1,sel:{},bursts:[],rec:false,autoSel:false});
+      Object.assign(L,{stream,video:v,cv,wrap,lm:null,modelReady:false,tracks:[],nextId:1,sel:{},bursts:[],rec:false,autoSel:false,derr:0});
+      // tunggu gambar pertama (maks 12 detik), coba play() berulang
+      const t0=Date.now();
+      while(!(v.videoWidth>0&&v.readyState>=2)){
+        if(gone())return;
+        if(Date.now()-t0>12000)throw new Error(T("Kamera menyala tetapi tidak mengirim gambar. Tutup aplikasi lain yang memakai kamera, lalu coba lagi.","The camera started but sent no picture. Close other camera apps and try again."));
+        try{await v.play()}catch(e){}
+        await liveSleep(150);
+      }
+      cv.width=v.videoWidth;cv.height=v.videoHeight;liveFit(wrap,cv.width,cv.height);
       L.hasMic=stream.getAudioTracks().length>0;
       L.mic={ring:[],on:false,start:0,last:0,pk:0,peak:0};
       if(L.hasMic){
         try{
           const AC=window.AudioContext||window.webkitAudioContext,ac=new AC();
-          try{await ac.resume()}catch(e){}
+          try{await _tmo(ac.resume(),2500,"x")}catch(e){}
           const src=ac.createMediaStreamSource(stream),hp=ac.createBiquadFilter(),lp=ac.createBiquadFilter(),an=ac.createAnalyser();
           hp.type="highpass";hp.frequency.value=300;lp.type="lowpass";lp.frequency.value=3500;an.fftSize=1024;
           src.connect(hp);hp.connect(lp);lp.connect(an);
@@ -2985,20 +3026,28 @@ ${JSON.stringify(tel)}`;
           L.micT=setInterval(liveMicTick,20);
         }catch(e){L.hasMic=false}
       }
-      try{if(navigator.wakeLock)L.wake=await navigator.wakeLock.request("screen")}catch(e){}
+      try{if(navigator.wakeLock)L.wake=await _tmo(navigator.wakeLock.request("screen"),3000,"x")}catch(e){}
+      if(gone())return;
+      // kamera langsung tampil; model dimuat di belakang
       L.active=true;L.starting=false;L.msg="";
       draw();liveAttach();liveLoop();
-    }catch(err){L.starting=false;L.msg="";L.err=err.message||String(err);liveOff();draw()}
+      liveLoadModel();
+    }catch(err){
+      if(gone())return;
+      L.starting=false;L.msg="";L.err=liveErrMsg(err);liveOff();draw();
+    }
   }
   function liveOff(){
     const L=liveState;
+    L.runId++;
     clearTimeout(L.loopT);clearInterval(L.micT);
     try{L.stream&&L.stream.getTracks().forEach(t=>t.stop())}catch(e){}
     try{L.ac&&L.ac.close()}catch(e){}
     try{L.wake&&L.wake.release()}catch(e){}
     try{L.wrap&&L.wrap.remove()}catch(e){}
-    Object.assign(L,{active:false,starting:false,rec:false,stream:null,video:null,cv:null,wrap:null,tracks:[],sel:{},ac:null,an:null,wake:null});
+    Object.assign(L,{active:false,starting:false,rec:false,stream:null,video:null,cv:null,wrap:null,tracks:[],sel:{},ac:null,an:null,wake:null,lm:null,modelReady:false,derr:0});
   }
+  document.addEventListener("visibilitychange",()=>{const L=liveState;if(!document.hidden&&L.active&&L.video&&L.video.paused){try{L.video.play()}catch(e){}}});
   function liveMicTick(){
     const L=liveState,an=L.an;if(!an||!L.active)return;
     an.getFloatTimeDomainData(L.buf);let s=0;for(let i=0;i<L.buf.length;i++)s+=L.buf[i]*L.buf[i];
@@ -3064,7 +3113,15 @@ ${JSON.stringify(tel)}`;
       const v=L.video;
       if(v&&v.readyState>=2&&v.videoWidth){
         const w=v.videoWidth,h=v.videoHeight;
-        let r=null;try{r=L.lm.detect(v)}catch(e){}
+        let r=null;
+        if(L.modelReady&&L.lm){
+          try{r=L.lm.detect(v);L.derr=0}
+          catch(e){
+            if(++L.derr>=5){ // GPU bermasalah: pindah ke mode CPU otomatis, tanpa refresh
+              L.derr=0;L.modelReady=false;_poseCPU=true;_poseLm=null;liveLoadModel();
+            }
+          }
+        }
         const dets=((r&&r.landmarks)||[]).map(Lm=>{const b=poseBox(Lm);return b?{b,pts:Lm.map(p=>({x:p.x*w,y:p.y*h,v:p.visibility}))}:null}).filter(Boolean);
         liveTrackStep(dets);
         if(L.rec){
@@ -3081,6 +3138,7 @@ ${JSON.stringify(tel)}`;
   }
   function liveRec(){
     const L=liveState;if(!L.active||L.rec)return;
+    if(!L.modelReady)return toast(T("Model deteksi masih dimuat, tunggu sebentar","The motion model is still loading, please wait"));
     if(!Object.keys(L.sel).length){ // satu orang di layar: otomatis dipilih
       const seen=L.tracks.filter(t=>t.seen);
       if(seen.length===1){L.sel[seen[0].id]={name:"",sid:""};if(!pmState.free){draw();return toast(T("Pilih murid untuk orang ini, lalu tekan Mulai rekam lagi","Choose the student for this person, then press Start again"))}}
@@ -3111,16 +3169,17 @@ ${JSON.stringify(tel)}`;
   function liveCardHtml(){
     const L=liveState,free=pmState.free,ids=Object.keys(L.sel),portrait=false;
     let b=!L.active&&!L.starting?`<div class="note" style="margin-bottom:10px">📱 ${T("Portrait cocok untuk 1 orang; untuk beberapa peserta putar HP ke landscape supaya semuanya masuk layar. Taruh kamera diam dan seluruh badan terlihat.","Portrait works for 1 person; for several participants rotate to landscape so everyone fits. Keep the camera still with full bodies visible.")}</div>`:"";
-    if(L.starting)b+=`<p class="mu" id="liveMsg" style="margin:0">${esc(L.msg||"...")}</p>`;
+    if(L.starting)b+=`<p class="mu" id="liveMsg" style="margin:0 0 10px">⏳ ${esc(L.msg||"...")}</p><button class="btn ghost" data-pm="liveOff">${T("Batal","Cancel")}</button>`;
     else if(!L.active){
       if(pmState.multi||pmState.rep)b+=""; 
       b+=`<p class="mu" style="margin:0 0 10px;font-size:13px">${T("Kamera menilai langsung beberapa peserta sekaligus. Video tidak direkam atau diunggah, hanya titik gerak tubuh dan suara Kihap dibaca di perangkat ini.","The camera scores several participants at once. Video is not recorded or uploaded; only body points and Kihap sound are read on this device.")}</p><button class="btn" data-pm="liveOn">📷 ${T("Nyalakan kamera","Turn on camera")}</button>`;
     }else{
       b+=`<div id="liveHost"></div>`;
+      b+=L.modelReady?"":(L.modelErr?`<div class="note" style="margin:8px 0">⚠️ ${T("Model deteksi gerakan belum bisa dimuat","The motion model could not be loaded yet")}: ${esc(L.modelErr)}<br><button class="btn" style="margin-top:8px" data-pm="liveModel">🔄 ${T("Coba lagi","Try again")}</button></div>`:`<p class="mu" id="liveMsg" style="margin:8px 0;font-size:13px">⏳ ${esc(L.msg||T("Memuat model deteksi gerakan...","Loading motion model..."))} <span style="opacity:.8">${T("Kamera sudah menyala, tunggu sebentar.","The camera is on, please wait a moment.")}</span></p>`);
       b+=`<div style="margin:8px 0;height:6px;background:var(--ln);border-radius:4px;overflow:hidden"><div id="liveMic" style="height:100%;width:0;background:#1E7B4F"></div></div><p class="mu" style="margin:0 0 8px;font-size:12.5px">${L.hasMic?"🎤 "+T("level suara (Kihap dibaca dari sini)","sound level (Kihap is read from this)"):"⚠ "+T("Mikrofon tidak aktif: Kihap tidak terbaca, pakai koreksi manual di Pengaturan.","Microphone not active: Kihap not readable, use the manual override in Settings.")} · 👥 <span id="liveSeen">0</span> ${T("terdeteksi","detected")}${L.rec?` · ⏺ <b id="liveTimer">00:00</b> · 🗣️ <b id="liveKihap">0</b> Kihap`:""}</p>`;
       b+=L.rec?"":`<p class="mu" style="margin:0 0 8px;font-size:13px">${T("Kalau hanya 1 orang di layar, otomatis terpilih. Untuk beberapa orang, ketuk kotak tiap peserta lalu isi namanya.","If only 1 person is on screen they are selected automatically. For several people, tap each participant's box and fill in their names.")}</p>`;
       b+=ids.map(id=>{const c=ANA_COL[(id-1)%ANA_COL.length],cfg=L.sel[id];return `<div class="row" style="gap:8px;flex-wrap:wrap"><span style="display:flex;align-items:center;gap:8px;flex:1;min-width:220px"><b style="color:${c}">#${id}</b>${free?`<input data-livename="${id}" value="${esc(cfg.name||"")}" maxlength="40" placeholder="${T("Nama peserta (bebas diisi)","Participant name (free text)")}" style="flex:1" ${L.rec?"disabled":""}>`:`<select data-livesel="${id}" style="flex:1" ${L.rec?"disabled":""}><option value="">— ${T("pilih murid","choose student")} —</option>${anaOptsHtml(cfg.sid||"")}</select>`}</span>${L.rec?"":`<button type="button" class="btn ghost dn" data-pm="liveRm" data-id="${id}">✕</button>`}</div>`}).join("");
-      b+=`<p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap">${L.rec?`<button class="btn dn" data-pm="liveFin">⏹ ${T("Selesai & nilai","Finish & score")}</button>`:`<button class="btn" data-pm="liveRec">⏺ ${T("Mulai rekam","Start")} ${ids.length?"("+ids.length+" "+T("orang","people")+")":""}</button><button class="btn ghost" data-pm="liveOff">${T("Matikan kamera","Turn off camera")}</button>`}</p>`;
+      b+=`<p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap">${L.rec?`<button class="btn dn" data-pm="liveFin">⏹ ${T("Selesai & nilai","Finish & score")}</button>`:`<button class="btn" data-pm="liveRec" ${L.modelReady?"":"disabled"}>⏺ ${T("Mulai rekam","Start")} ${ids.length?"("+ids.length+" "+T("orang","people")+")":""}</button><button class="btn ghost" data-pm="liveOff">${T("Matikan kamera","Turn off camera")}</button>`}</p>`;
     }
     if(L.err)b+=`<p style="margin:10px 0 0"><span class="pill warn">${esc(L.err)}</span></p>`;
     return `<div class="sec"><div class="ux-step"><i>2</i>📷 ${T("Kamera live","Live camera")}</div>${b}</div>`;
@@ -3168,6 +3227,7 @@ ${JSON.stringify(tel)}`;
     const a=b.dataset.pm,st=S.find(x=>x.id===anaState.stu),kat=pmState.kat||(st&&st.b)||"";
     if(a==="liveOn")return liveOn();
     if(a==="liveOff"){liveOff();pmState.err="";liveState.err="";return draw();}
+    if(a==="liveModel"){liveLoadModel();draw();return}
     if(a==="liveRec")return liveRec();
     if(a==="liveFin")return liveFinish();
     if(a==="liveRm"){delete liveState.sel[b.dataset.id];return draw();}
