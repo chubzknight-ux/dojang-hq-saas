@@ -2148,7 +2148,7 @@ document.addEventListener("change",e=>{
   draw();
   const DCOL=["students","attendance","payments","leads","classes","evaluations","coach_evaluations","coaches","units","pengumuman"];
   const dlFile=async(name,text)=>{let dl=null;try{dl=window.claude?await claude.use("downloads"):null}catch(e){}if(dl){try{await dl.save({filename:name,data:text});return}catch(e){}}const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=name;document.body.appendChild(a);a.click();a.remove()};
-  const MP_MODEL="https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+  const MP_MODEL="https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
 let _poseLm=null,_poseCPU=false;
 const _isIOS=()=>/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
 const _tmo=(p,ms,msg)=>new Promise((res,rej)=>{const t=setTimeout(()=>rej(new Error(msg)),ms);Promise.resolve(p).then(v=>{clearTimeout(t);res(v)},e=>{clearTimeout(t);rej(e)})});
@@ -2190,8 +2190,8 @@ async function poseAnalyze(file,mode,st,progress){
     try{await v.play();v.pause()}catch(e){}
     const dur=v.duration;
     if(!isFinite(dur)||dur<2)throw new Error(T("Video terlalu pendek atau rusak","Video too short or broken"));
-    const n=Math.min(150,Math.max(12,Math.round(dur*5)));
-    const sc=Math.min(1,480/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
+    const n=Math.min(240,Math.max(20,Math.round(dur*8)));
+    const sc=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
     const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),pts=[];
     for(let i=0;i<n;i++){
       await new Promise(res=>{const tm=setTimeout(res,6000);v.onseeked=()=>{clearTimeout(tm);res()};v.currentTime=dur*(0.02+0.96*i/(n-1))});
@@ -2204,7 +2204,17 @@ async function poseAnalyze(file,mode,st,progress){
     return poseScore(pts,mode,st,dur);
   }finally{URL.revokeObjectURL(url)}
 }
+// Haluskan getaran deteksi: median 3 frame per titik tubuh (membuang lonjakan 1 frame)
+function poseSmooth(pts){
+  return pts.map((p,i)=>{
+    const a=pts[i-1],b=pts[i+1];if(!p||!a||!b||a.length!==p.length||b.length!==p.length)return p;
+    const med=(x,y,z)=>x>y?(y>z?y:(x>z?z:x)):(x>z?x:(y>z?z:y));
+    return p.map((q,k)=>({x:med(a[k].x,q.x,b[k].x),y:med(a[k].y,q.y,b[k].y),v:q.v}));
+  });
+}
+function poseSmoothFr(fr){const sm=poseSmooth(fr.map(f=>f.p));return fr.map((f,i)=>({t:f.t,p:sm[i]}))}
 function poseScore(pts,mode,st,dur){
+  pts=poseSmooth(pts);
   const ok=(p,i)=>p[i]&&p[i].v>0.5,d2=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
   const ang=(a,b,c)=>{const x1=a.x-b.x,y1=a.y-b.y,x2=c.x-b.x,y2=c.y-b.y,m=Math.hypot(x1,y1)*Math.hypot(x2,y2);return m?Math.acos(Math.max(-1,Math.min(1,(x1*x2+y1*y2)/m)))*180/Math.PI:180};
   const rows=[];
@@ -2219,7 +2229,7 @@ function poseScore(pts,mode,st,dur){
   if(valid<0.4)throw new Error(T("Tubuh murid kurang terdeteksi. Pastikan seluruh badan terlihat, kamera diam, dan hanya ada satu murid di layar.","The student's body was poorly detected. Make sure the whole body is visible, the camera is steady, and only one student is on screen."));
   const q=(arr,f)=>{const s=[...arr].sort((a,b)=>a-b);return s[Math.min(s.length-1,Math.max(0,Math.floor(f*(s.length-1))))]};
   const lvl=(x,cuts)=>1+cuts.filter(c=>x>=c).length;
-  const kicks=rows.reduce((c,r,i)=>c+(r.kick&&!(i>0&&rows[i-1].kick)?1:0),0);
+  const kicks=(()=>{let c=0,run=0;rows.forEach(r=>{if(r.kick)run++;else{if(run>=2)c++;run=0}});if(run>=2)c++;return c})();
   const kf=rows.filter(r=>r.kick&&r.kh!==null).map(r=>r.kh),stand=rows.filter(r=>!r.kick).map(r=>r.knee);
   const expect=0.35+0.075*(Number(st&&st.bi)||0);
   const kmax=kf.length>=2?q(kf,0.9):null,k25=stand.length>=8?q(stand,0.25):null;
@@ -2382,7 +2392,7 @@ function anaFrames(file,n){return new Promise((resolve,reject)=>{
       try{await v.play();v.pause()}catch(e){}
       const dur=v.duration;
       if(!isFinite(dur)||dur<2)throw new Error(T("Video terlalu pendek atau rusak","Video too short or broken"));
-      const raw=mode==="__raw",n=raw?Math.min(240,Math.max(20,Math.round(dur*8))):Math.min(120,Math.max(12,Math.round(dur*4)));
+      const raw=mode==="__raw",n=Math.min(240,Math.max(20,Math.round(dur*8)));
       const sc=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
       const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),dets=[];
       for(let i=0;i<n;i++){
@@ -2434,7 +2444,7 @@ function anaFrames(file,n){return new Promise((resolve,reject)=>{
   // Telemetri sudut sendi, tempo, dan keseimbangan diekstrak di perangkat; video tidak diunggah.
   const PM_JURUS=["Gibon 1 Jang","Gibon 2 Jang","Gibon 3 Jang","Taegeuk 1 Jang","Taegeuk 2 Jang","Taegeuk 3 Jang","Taegeuk 4 Jang","Taegeuk 5 Jang","Taegeuk 6 Jang","Taegeuk 7 Jang","Taegeuk 8 Jang","Koryo","Keumgang","Taebaek","Pyongwon","Sipjin","Jitae","Chonkwon","Hansu","Ilyeo"];
   const PM_DUR=[5,8];
-  const pmState={fname:"",free:false,saved:null,saveErr:"",multi:null,jurus:"Taegeuk 1 Jang",kat:"",ctx:"UKT",slow:"",kihap:"",busy:false,msg:"",err:"",tel:null,rep:null,ai:"",aiBusy:false,aiErr:""};
+  const pmState={kihap:"1",fname:"",free:false,saved:null,saveErr:"",multi:null,jurus:"Taegeuk 1 Jang",kat:"",ctx:"UKT",slow:"",busy:false,msg:"",err:"",tel:null,rep:null,ai:"",aiBusy:false,aiErr:""};
   const pmPrompt=(jurus,kat,tel,konteks)=>`PERAN & KONTEKS:
 Anda adalah Wasit Internasional World Taekwondo (WT) dan Pelatih Kepala Poomsae Kukkiwon. Anda akan menerima data telemetri biomekanik dalam format JSON yang diekstrak secara lokal dari video penampilan Poomsae (tanpa lampiran video).
 
@@ -2481,13 +2491,13 @@ ${JSON.stringify(tel)}`;
     for(let i=0;i<n;i++){let a=0;for(let j=i*win;j<(i+1)*win;j++)a+=d[j]*d[j];env[i]=Math.sqrt(a/win)}
     if(n<10)return null;
     const s=[...env].sort((a,b)=>a-b),med=s[Math.floor(n*0.5)],p99=s[Math.floor(n*0.99)];
-    if(p99<0.004)return {silent:true,bursts:[]};
-    const thr=Math.max(med*6,p99*0.45,0.01),gap=3,bursts=[];let i=0;
+    if(p99<0.0025)return {silent:true,bursts:[]};
+    const thr=Math.max(med*5,p99*0.35,0.006),gap=3,bursts=[];let i=0;
     while(i<n){
       if(env[i]<thr){i++;continue}
       let j=i,last=i;while(j+1<n&&j-last<=gap){j++;if(env[j]>=thr)last=j}
       const dur=(last-i+1)*0.02;let pk=0;for(let k=i;k<=last;k++)pk=Math.max(pk,env[k]);
-      if(dur>=0.08&&dur<=0.7)bursts.push({t:Math.round(i*0.02*100)/100,dur:Math.round(dur*100)/100,peak:Math.round(pk*1000)/1000});
+      if(dur>=0.06&&dur<=0.8)bursts.push({t:Math.round(i*0.02*100)/100,dur:Math.round(dur*100)/100,peak:Math.round(pk*1000)/1000});
       i=last+1;
     }
     return {silent:false,bursts};
@@ -2499,7 +2509,15 @@ ${JSON.stringify(tel)}`;
       const ctx=new AC(),ab=await file.arrayBuffer();
       const buf=await new Promise((res,rej)=>{const r=ctx.decodeAudioData(ab,res,rej);if(r&&r.then)r.then(res,rej)});
       try{ctx.close&&ctx.close()}catch(e){}
-      return pmDetectBursts(buf.getChannelData(0),buf.sampleRate);
+      let d=buf.getChannelData(0);
+      if(buf.numberOfChannels>1){const e2=buf.getChannelData(1),m=new Float32Array(d.length);for(let i=0;i<m.length;i++)m[i]=(d[i]+e2[i])/2;d=m}
+      try{ // saring pita suara manusia (300–3500 Hz) supaya dentuman/musik bass tidak dikira Kihap
+        const OC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+        if(OC){const oc=new OC(1,d.length,buf.sampleRate),b2=oc.createBuffer(1,d.length,buf.sampleRate);b2.copyToChannel(d,0);
+          const src=oc.createBufferSource();src.buffer=b2;const hp=oc.createBiquadFilter();hp.type="highpass";hp.frequency.value=300;const lp=oc.createBiquadFilter();lp.type="lowpass";lp.frequency.value=3500;
+          src.connect(hp);hp.connect(lp);lp.connect(oc.destination);src.start();const r=await oc.startRendering();d=r.getChannelData(0)}
+      }catch(e){}
+      return pmDetectBursts(d,buf.sampleRate);
     }catch(e){return null}
   }
   async function pmExtract(file,progress){
@@ -2514,7 +2532,7 @@ ${JSON.stringify(tel)}`;
       const dur=v.duration;
       if(!isFinite(dur)||dur<2)throw new Error(T("Video terlalu pendek atau rusak","Video too short or broken"));
       const n=Math.min(240,Math.max(20,Math.round(dur*8)));
-      const sc=Math.min(1,480/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
+      const sc=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
       const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),fr=[];
       for(let i=0;i<n;i++){
         const t=dur*(0.01+0.98*i/(n-1));
@@ -2529,6 +2547,7 @@ ${JSON.stringify(tel)}`;
     }finally{URL.revokeObjectURL(url)}
   }
   function pmTelemetry(fr,dur,opt){
+    fr=poseSmoothFr(fr);
     opt=opt||{};const slow=opt.slow===true||opt.slow===false?opt.slow:null,ctx=opt.ctx==="Simulasi Kejuaraan"?"Simulasi Kejuaraan":"UKT";
     const ok=(p,i)=>p[i]&&p[i].v>0.5,d2=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
     const ang=(a,b,c)=>{const x1=a.x-b.x,y1=a.y-b.y,x2=c.x-b.x,y2=c.y-b.y,m=Math.hypot(x1,y1)*Math.hypot(x2,y2);return m?Math.acos(Math.max(-1,Math.min(1,(x1*x2+y1*y2)/m)))*180/Math.PI:180};
@@ -2592,8 +2611,10 @@ ${JSON.stringify(tel)}`;
     const aud=opt.audio&&!opt.audio.silent&&Array.isArray(opt.audio.bursts)?opt.audio.bursts:null;
     const req=Number.isFinite(opt.kihapReq)&&opt.kihapReq>0?Math.round(opt.kihapReq):null;
     const synced=aud?aud.filter(b=>peaks.some(p=>Math.abs(p.t-b.t)<=0.4)).length:null;
-    const kihapOk=aud&&req!==null?(aud.length>=req&&synced>=req):null;
-    const kq=aud&&req!==null?Math.min(1,synced/req):null;
+    const man=opt.kihapManual==="1"?true:opt.kihapManual==="0"?false:null;
+    let kihapOk=aud&&req!==null?(aud.length>=req&&synced>=req):null;
+    let kq=aud&&req!==null?Math.min(1,synced/req):null;
+    if(man!==null){kihapOk=man;kq=man?1:0}
     const headOk=yawFlags.length>=2?yawFlags.filter(Boolean).length/yawFlags.length:null;
     // Expression: gaze (jika ada) jadi dasar utama; kihap (audio) belum diukur di perangkat sehingga diabaikan (null)
     const posture=0.5*stab+0.5*contrast,comps=[headOk,kq].filter(x=>x!==null),eq=comps.length?0.7*(comps.reduce((a,b)=>a+b,0)/comps.length)+0.3*posture:posture;
@@ -2607,20 +2628,23 @@ ${JSON.stringify(tel)}`;
     const pres={speedPower:r2(anc(sq)),rhythmTempo:r2(anc(tq)),expression:r2(anc(eq))};
     const presentation=r2(pres.speedPower+pres.rhythmTempo+pres.expression);
     const tel={konteks:ctx,durasi_detik:Math.round(dur*10)/10,frame_terdeteksi_persen:Math.round(valid*100),jumlah_gerakan_terdeteksi:peaks.length,
-      is_slow_motion:slow,head_yaw_aligned:headOk===null?null:headOk===1,head_yaw_aligned_persen:headOk===null?null:Math.round(headOk*100),kihap_detected:kihapOk,kihap_wajib_jumlah:req,kihap_terdeteksi_jumlah:aud?aud.length:null,kihap_waktu_detik:aud&&aud.length?aud.map(b=>Math.round(b.t*10)/10):null,kihap_sinkron_dengan_gerakan:synced,
+      is_slow_motion:slow,head_yaw_aligned:headOk===null?null:headOk===1,head_yaw_aligned_persen:headOk===null?null:Math.round(headOk*100),kihap_detected:kihapOk,kihap_sumber:man!==null?"manual":(aud?"otomatis":null),kihap_wajib_jumlah:req,kihap_terdeteksi_jumlah:aud?aud.length:null,kihap_waktu_detik:aud&&aud.length?aud.map(b=>Math.round(b.t*10)/10):null,kihap_sinkron_dengan_gerakan:synced,
       standar_durasi_detik_jika_slow:PM_DUR,urutan_gerakan:"tidak diverifikasi (hanya kecepatan, bukan nama teknik)",
       ringkasan:{sudut_lutut_terendah_deg:kneeMin,kemiringan_badan_median_deg:leanMed,peak_velocity_torso_per_dtk:Math.round(pv*10)/10,peak_velocity_konsisten_hingga_akhir:velConsistent,hip_wobble:Math.round(wob*100)/100,konsistensi_jeda_cv:cv===null?null:Math.round(cv*100)/100,median_jeda_dtk:Math.round(mg*10)/10},
       log_penyimpangan:log.map(e=>({t:e.t,gerakan_ke:e.gerakan,jenis:e.jenis,tingkat:e.tingkat,detail:e.detail,potongan:e.potongan}))};
     // null-safe: buang parameter null supaya tidak dikarang AI
     const clean=o=>{if(Array.isArray(o))return o.map(clean);if(o&&typeof o==="object"){const r={};Object.keys(o).forEach(k=>{if(o[k]!==null&&o[k]!==undefined)r[k]=clean(o[k])});return r}return o};
     const telc=clean(tel);
-    return {tel:telc,log,accuracy,pres,presentation,total:r2(accuracy+presentation),ctx,conf:valid>=0.8?"tinggi":valid>=0.6?"sedang":"rendah",kihap:{aud:aud?aud.length:null,silent:!!(opt.audio&&opt.audio.silent),req,synced,t:aud?aud.map(b=>Math.round(b.t*10)/10):[],ok:kihapOk}};
+    return {tel:telc,log,accuracy,pres,presentation,total:r2(accuracy+presentation),ctx,conf:valid>=0.8?"tinggi":valid>=0.6?"sedang":"rendah",peaksT:peaks.map(p=>p.t),kihap:{man,aud:aud?aud.length:null,silent:!!(opt.audio&&opt.audio.silent),req,synced,t:aud?aud.map(b=>Math.round(b.t*10)/10):[],ok:kihapOk}};
   }
   function pmKihapLine(k){
-    if(k.silent)return T("audio video senyap atau terlalu pelan, tidak dinilai.","video audio is silent or too quiet, not scored.");
-    if(k.aud===null)return T("audio tidak bisa dibaca dari video ini, tidak dinilai.","audio could not be read from this video, not scored.");
-    const w=k.aud?(T("terdeteksi ","detected ")+k.aud+"× ("+k.t.map(x=>x.toFixed(1)+"s").join(", ")+"), "+k.synced+T(" selaras dengan puncak gerakan"," in sync with movement peaks")):T("tidak terdeteksi","none detected");
-    return w+(k.req!==null?" · "+T("wajib ","required ")+k.req+" → "+(k.ok?"✓":"✗"):" · "+T("jumlah wajib belum diisi, tidak memengaruhi skor","required count not set, does not affect the score"));
+    const chip=(c,t)=>`<span class="pill ${c}">${t}</span>`;
+    if(k.man!==null&&k.man!==undefined)return chip(k.man?"ok":"warn",(k.man?"✓ ":"✗ ")+T("Kihap (koreksi manual): ","Kihap (manual): ")+(k.man?T("terdengar","heard"):T("tidak ada","none")));
+    if(k.silent)return chip("warn","⚠ "+T("Kihap TIDAK TERBACA: audio senyap atau terlalu pelan. Gunakan koreksi manual atau rekam ulang dengan suara.","Kihap NOT READ: audio silent or too quiet. Use manual override or re-record with sound."));
+    if(k.aud===null)return chip("warn","⚠ "+T("Kihap TIDAK TERBACA: audio tidak bisa dibaca dari video ini. Gunakan koreksi manual.","Kihap NOT READ: audio could not be read from this video. Use manual override."));
+    const w=k.aud?T("terdeteksi ","detected ")+k.aud+"× ("+k.t.map(x=>x.toFixed(1)+"s").join(", ")+"), "+k.synced+T(" selaras dengan gerakan"," in sync with movement"):T("tidak terdeteksi","none detected");
+    if(k.req===null)return chip(k.aud?"ok":"warn",(k.aud?"✓ ":"⚠ ")+w)+" <span class=\"mu\" style=\"font-size:12px\">"+T("jumlah wajib kosong, tidak memengaruhi skor","required count empty, does not affect the score")+"</span>";
+    return chip(k.ok?"ok":"warn",(k.ok?"✓ ":"✗ ")+w+" · "+T("wajib ","required ")+k.req);
   }
   function pmPickDrills(rep){
     const sum={};rep.log.forEach(e=>{sum[e.jenis]=(sum[e.jenis]||0)-e.potongan});
@@ -2678,33 +2702,155 @@ ${JSON.stringify(tel)}`;
     const cards=m.map((x,i)=>x.error?`<div class="sec"><h2>${esc(x.st._n)} <span class="pill">#${x.n}</span></h2><span class="pill warn">${esc(x.error)}</span></div>`:`<div style="margin-top:10px">${pmResultHtml(x.rep,{title:x.st._n+" · "+pmState.jurus,ai:x.ai,aiBusy:x.aiBusy,aiErr:x.aiErr,aiAct:"aiN",i})}<p style="margin:6px 0 0"><button class="btn ghost" data-pm="copyN" data-i="${i}">📋 ${T("Salin prompt + JSON","Copy prompt + JSON")} (${esc(x.st._n)})</button></p></div>`).join("");
     return warn+rank+cards;
   }
-  function pmHtml(){
-    const st=S.find(x=>x.id===anaState.stu),rep=pmState.rep;
-    const kat=pmState.kat||(st&&st.b)||"";
-    const form=`<div class="sec"><h2>🏆 ${T("Analisa Poomsae (standar WT)","Poomsae Analysis (WT standard)")}</h2><p class="mu" style="margin:0 0 10px;font-size:13px">${T("Mengukur sudut sendi, tempo, dan keseimbangan dari video, lalu dikonversi ke nilai Accuracy (maks 4.00) dan Presentation (maks 6.00). Pilih murid dan video di atas. Kamera diam, seluruh badan dan wajah terlihat. Aturan durasi 5–8 detik hanya dipakai jika gerakan lambat wajib dipilih Ya.","Measures joint angles, tempo and balance from the video, then converts them to Accuracy (max 4.00) and Presentation (max 6.00). Choose the student and video above. Steady camera, full body and face visible. The 5–8 s duration rule applies only if mandatory slow motion is set to Yes.")}</p><div class="f"><div><label>${T("Tujuan analisa","Analysis target")}</label><select id="pmTarget"><option value="student" ${!pmState.free?"selected":""}>${T("Murid → langsung masuk Penilaian","Student → saved straight to Evaluations")}</option><option value="free" ${pmState.free?"selected":""}>${T("Analisa bebas (tanpa murid, tidak disimpan)","Free analysis (no student, not saved)")}</option></select></div><div><label>${T("Nama jurus","Poomsae name")}</label><select id="pmJurus">${PM_JURUS.map(j=>`<option ${pmState.jurus===j?"selected":""}>${j}</option>`).join("")}</select></div><div><label>${T("Kategori / sabuk","Category / belt")}</label><input id="pmKat" value="${esc(kat)}" placeholder="${T("mis. Cadet, Sabuk Hijau","e.g. Cadet, Green Belt")}"></div>${pmState.free?`<div><label>${T("Nama peserta (opsional)","Participant name (optional)")}</label><input id="pmFname" value="${esc(pmState.fname)}" maxlength="40" placeholder="${T("mis. nama sendiri","e.g. your own name")}"></div>`:""}<div><label>${T("Konteks","Context")}</label><select id="pmCtx"><option value="UKT" ${pmState.ctx==="UKT"?"selected":""}>UKT</option><option value="Simulasi Kejuaraan" ${pmState.ctx!=="UKT"?"selected":""}>${T("Simulasi Kejuaraan","Championship simulation")}</option></select></div><div><label>${T("Jumlah Kihap wajib","Required Kihap count")}</label><input id="pmKihap" type="number" min="0" max="10" inputmode="numeric" value="${esc(pmState.kihap)}" placeholder="${T("kosong = tidak dinilai","empty = not scored")}"></div><div><label>${T("Gerakan lambat wajib?","Mandatory slow motion?")}</label><select id="pmSlow"><option value="" ${pmState.slow===""?"selected":""}>${T("Tidak diketahui (aturan durasi tidak dipakai)","Unknown (duration rule not applied)")}</option><option value="1" ${pmState.slow==="1"?"selected":""}>${T("Ya (Taegeuk 5–8 / Sabuk Hitam)","Yes (Taegeuk 5–8 / Black Belt)")}</option><option value="0" ${pmState.slow==="0"?"selected":""}>${T("Tidak (tempo normal)","No (normal tempo)")}</option></select></div></div><p style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-pm="run" ${pmState.busy?"disabled":""}>${pmState.busy?"⏳ "+esc(pmState.msg):"🏆 "+T("Analisa Poomsae","Analyze Poomsae")}</button>${(()=>{
-      const nsel=pmState.free?anaState.sel.length:anaCount();
-      if(anaState.pickOn&&anaState.prev&&nsel)return `<button class="btn" data-pm="runMulti" ${pmState.busy?"disabled":""}>${pmState.busy?"⏳ "+esc(pmState.msg):"👥 "+T("Analisa Poomsae ","Analyze Poomsae ")+nsel+" "+T("murid","student(s)")}</button>`;
-      if(anaState.pickOn&&anaState.prev)return `<button class="btn ghost" disabled>👥 ${pmState.free?T("Ketuk orang di gambar dulu","Tap people in the image first"):T("Ketuk orang di gambar, lalu pilih muridnya","Tap people in the image, then pick students")}</button>`;
-      return `<button class="btn ghost" data-pm="pick" ${pmState.busy||anaState.busy?"disabled":""}>👥 ${T("Analisa beberapa murid sekaligus","Analyze several students at once")}</button>`;
-    })()}${rep?`<button class="btn ghost" data-pm="copy">📋 ${T("Salin prompt + JSON untuk AI","Copy prompt + JSON for AI")}</button>`:""}</p>${pmState.err?`<span class="pill warn">${esc(pmState.err)}</span>`:""}<p class="mu" style="font-size:12.5px;margin:10px 0 0">👥 ${T("Beberapa murid dalam satu video: klik tombol \"Analisa beberapa murid sekaligus\", ketuk tiap murid di gambar video (bagian \"Pilih orang di video\" di atas kartu ini), lalu klik Analisa Poomsae. Suara Kihap tidak bisa dipisah per orang, jadi tidak dinilai saat lebih dari satu murid.","Several students in one video: click \"Analyze several students at once\", tap each student in the video frame (the \"Pick people in the video\" section above this card), then click Analyze Poomsae. Kihap sound cannot be separated per person, so it is not scored with more than one student.")}</p></div>`;
-    const multi=pmState.multi;let out="";
-    if(rep)out+=pmResultHtml(rep,{title:(pmState.free&&pmState.repName?pmState.repName+" · ":"")+pmState.jurus,ai:pmState.ai,aiBusy:pmState.aiBusy,aiErr:pmState.aiErr,aiAct:"ai",i:""});
-    if(multi)out+=pmMultiHtml(multi);
-    return form+pmSavedHtml()+out;
+  // ===== UI ANALISA VIDEO TERPADU: satu alur untuk Poomsae, Kyorugi, dan Latihan umum =====
+  Object.assign(pmState,{people:"one",kihapManual:"",cache:null,fk:null,repName:""});
+  const pmOpts=audio=>({audio,kihapReq:pmState.kihap===""?null:Number(pmState.kihap),kihapManual:pmState.kihapManual,ctx:pmState.ctx,slow:pmState.slow==="1"?true:pmState.slow==="0"?false:null});
+  const pmReset=()=>{pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";pmState.ai="";pmState.fk=null;pmState.err="";};
+  const uxMulti=()=>ROLE==="owner"&&pmState.people==="multi";
+  function pmAttribute(audio,pks){
+    if(!audio)return pks.map(()=>null);
+    if(audio.silent)return pks.map(()=>audio);
+    if(pks.length===1)return [audio];
+    const out=pks.map(()=>({silent:false,bursts:[]}));
+    audio.bursts.forEach(b=>{
+      const d=pks.map((pk,i)=>({i,d:pk&&pk.length?Math.min(...pk.map(t=>Math.abs(t-b.t))):9})).sort((x,y)=>x.d-y.d);
+      if(d[0].d>0.4)return;
+      if(d[1]&&d[1].d<=0.4&&d[1].d-d[0].d<0.12)return;
+      out[d[0].i].bursts.push(b);
+    });
+    return out;
   }
-  const __anaOrig2=V.ana;
-  V.ana=()=>{
-    const h=__anaOrig2();
-    if(anaState.mode!=="poomsae"||h.indexOf('id="anaMode"')<0)return h;
-    const mark='<div class="sec"><h2>✓',i=h.indexOf(mark),extra=pmHtml();
-    return i>=0?h.slice(0,i)+extra+h.slice(i):h+extra;
+  async function pmRun(){
+    const st=S.find(x=>x.id===anaState.stu),free=pmState.free;
+    if(!free){
+      if(!st)return toast(T("Pilih murid dulu","Select a student first"));
+      if(!st.foto)return toast(T("Murid ini belum punya izin foto/video","This student has no photo/video consent"));
+    }
+    pmReset();pmState.busy=true;pmState.msg=T("Memulai...","Starting...");draw();
+    try{
+      let c=pmState.cache&&pmState.cache.kind==="one"&&pmState.cache.file===anaState.file?pmState.cache:null;
+      if(!c){
+        const {fr,dur}=await pmExtract(anaState.file,m=>{pmState.msg=m;const bt=document.querySelector('[data-pm="go"]');if(bt)bt.textContent="⏳ "+m});
+        pmState.msg=T("Membaca suara Kihap...","Reading Kihap sound...");draw();
+        c=pmState.cache={kind:"one",file:anaState.file,fr,dur,audio:await pmAudio(anaState.file)};
+      }
+      pmState.repName=free?String(pmState.fname||"").trim():"";
+      pmState.rep=pmTelemetry(c.fr,c.dur,pmOpts(c.audio));
+      if(!free)await pmAutoSave([{st,rep:pmState.rep}]);
+    }catch(err){pmState.err=err.message||String(err)}
+    pmState.busy=false;pmState.msg="";draw();
+  }
+  async function pmRunMulti(){
+    const free=pmState.free,asg=free?anaState.sel:anaState.sel.filter(x=>x.sid);
+    if(!asg.length||!anaState.file||!anaState.prev)return toast(free?T("Ketuk orang di gambar dulu","Tap people in the image first"):T("Ketuk orang di gambar dan pilih muridnya dulu","Tap people in the image and assign students first"));
+    const people=asg.map(x=>({n:x.n,st:S.find(y=>y.id===x.sid)||(free?{id:"",_n:String(x.name||"").trim()||T("Orang #","Person #")+x.n,b:""}:null),box:anaState.prev.people.find(p=>p.n===x.n)})).filter(x=>x.st&&x.box);
+    if(!free&&people.some(x=>!x.st.foto))return toast(T("Ada murid tanpa izin foto/video","A student has no photo/video consent"));
+    pmReset();pmState.busy=true;pmState.msg=T("Memulai...","Starting...");draw();
+    try{
+      const key=asg.map(x=>x.n).join(",")+"@"+anaState.prev.t;
+      let c=pmState.cache&&pmState.cache.kind==="multi"&&pmState.cache.file===anaState.file&&pmState.cache.key===key?pmState.cache:null;
+      if(!c){
+        const rw=await poseAnalyzeMulti(anaState.file,"__raw",people,anaState.prev.t,m=>{pmState.msg=m;const bt=document.querySelector('[data-pm="go"]');if(bt)bt.textContent="⏳ "+m});
+        pmState.msg=T("Membaca suara Kihap...","Reading Kihap sound...");draw();
+        c=pmState.cache={kind:"multi",file:anaState.file,key,rw,audio:await pmAudio(anaState.file)};
+      }
+      const rw=c.rw,frOf=t=>rw.ts.map((tt,i)=>({t:tt,p:t.pts[i]||null}));
+      const first=rw.tracks.map(t=>{try{return pmTelemetry(frOf(t),rw.dur,pmOpts(null))}catch(e){return null}});
+      const aud=pmAttribute(c.audio,first.map(r=>r?r.peaksT:[]));
+      pmState.multi=rw.tracks.map((t,i)=>{
+        try{return {st:t.st,n:t.n,warn:rw.warn,rep:pmTelemetry(frOf(t),rw.dur,pmOpts(aud[i])),ai:"",aiBusy:false,aiErr:""}}
+        catch(err){return {st:t.st,n:t.n,warn:rw.warn,error:err.message||String(err)}}
+      });
+      if(!free)await pmAutoSave(pmState.multi.filter(x=>x.rep&&x.st&&x.st.id).map(x=>({st:x.st,rep:x.rep})));
+    }catch(err){pmState.err=err.message||String(err)}
+    pmState.busy=false;pmState.msg="";draw();
+  }
+  // Analisa bebas untuk Kyorugi / Latihan umum: hasil ditampilkan saja, tidak disimpan
+  async function fkRun(){
+    const mode=anaState.mode,multi=uxMulti();
+    pmReset();pmState.busy=true;pmState.msg=T("Memulai...","Starting...");draw();
+    try{
+      const prog=m=>{pmState.msg=m;const bt=document.querySelector('[data-pm="go"]');if(bt)bt.textContent="⏳ "+m};
+      if(multi){
+        if(!anaState.sel.length||!anaState.prev)throw new Error(T("Ketuk orang di gambar dulu","Tap people in the image first"));
+        const people=anaState.sel.map(x=>({n:x.n,st:{id:"",_n:String(x.name||"").trim()||T("Orang #","Person #")+x.n,bi:null,a:null},box:anaState.prev.people.find(p=>p.n===x.n)})).filter(x=>x.box);
+        const out=await poseAnalyzeMulti(anaState.file,mode,people,anaState.prev.t,prog);
+        pmState.fk=out.map(o=>({name:o.st._n,result:o.result,error:o.error,warn:o.warn}));
+      }else{
+        const res=await poseAnalyze(anaState.file,mode,{bi:null,a:null},prog);
+        pmState.fk=[{name:String(pmState.fname||"").trim()||T("Peserta","Participant"),result:res}];
+      }
+    }catch(err){pmState.err=err.message||String(err)}
+    pmState.busy=false;pmState.msg="";draw();
+  }
+  async function uxGo(){
+    if(pmState.busy||anaState.busy)return;
+    if(!anaState.file)return toast(T("Pilih video dulu","Choose a video first"));
+    const mode=anaState.mode,free=pmState.free,multi=uxMulti();
+    if(mode==="poomsae")return multi?pmRunMulti():pmRun();
+    if(free)return fkRun();
+    if(multi){try{await anaRunMulti()}catch(err){anaState.err=err.message||String(err);anaState.busy=false;anaState.msg="";draw()}return;}
+    const el=document.createElement("button");el.dataset.a="anaRun";el.style.display="none";document.body.appendChild(el);el.click();el.remove();
+  }
+  function fkHtml(){
+    const fk=pmState.fk;if(!fk)return "";
+    const cards=fk.map(x=>`<div style="border-top:1px solid var(--ln);padding:12px 0"><b>${esc(x.name)}</b>${x.error?` <span class="pill warn">${esc(x.error)}</span>`:`<div class="kpis" style="margin:10px 0;grid-template-columns:repeat(auto-fit,minmax(88px,1fr))">${SK_EVAL_FIELDS.map(f=>`<div class="kpi"><strong>${x.result[f.key]||"–"}</strong>${isEN()?f.en:f.id}</div>`).join("")}</div><p style="margin:0 0 6px">${esc(x.result.catatan||"")}</p>${(x.result.saran||[]).map(t=>`<div class="soft-l">🌱 ${esc(t)}</div>`).join("")}`}</div>`).join("");
+    return `<div class="sec"><h2>📊 ${T("Hasil analisa bebas","Free analysis result")}</h2>${fk.some(x=>x.warn)?`<div class="note">⚠️ ${T("Dua orang sering sangat berdekatan, pelacakan bisa tertukar.","Two people were often very close together, tracking may be swapped.")}</div>`:""}${cards}<div class="note">${T("Analisa bebas tidak disimpan ke Penilaian. Estimasi otomatis dari pose tubuh, bukan penilaian resmi.","Free analysis is not saved to Evaluations. Automatic estimate from body pose, not an official assessment.")}</div></div>`;
+  }
+  function uxPickHtml(){
+    if(!anaState.file)return `<p class="mu" style="margin:0">${T("Pilih video dulu, lalu ketuk orang yang akan dianalisa.","Choose a video first, then tap the people to analyze.")}</p>`;
+    const pv=anaState.prev,free=pmState.free;
+    if(!pv)return anaState.busy?`<p class="mu" id="anaPickMsg" style="margin:0 0 8px">${esc(anaState.msg||T("Memuat...","Loading..."))}</p><button class="btn ghost" data-a="anaCancel">${T("Batal","Cancel")}</button>`:`${anaState.err?`<p style="color:var(--rd);margin:0 0 8px">${esc(anaState.err)}</p>`:""}<button class="btn" data-pm="reload">${T("Muat gambar video","Load video frame")}</button>`;
+    const marks=pv.people.map(p=>{const sel=anaState.sel.find(s=>s.n===p.n),c=ANA_COL[(p.n-1)%ANA_COL.length];return `<button type="button" data-a="anaPickMark" data-i="${p.n}" aria-label="${T("Orang","Person")} ${p.n}" style="all:unset;cursor:pointer;position:absolute;box-sizing:border-box;left:${(p.x*100).toFixed(2)}%;top:${(p.y*100).toFixed(2)}%;width:${(p.w*100).toFixed(2)}%;height:${(p.h*100).toFixed(2)}%;border:${sel?4:2}px ${sel?"solid":"dashed"} ${c};background:${sel?c+"33":"transparent"};border-radius:8px"><span style="position:absolute;top:-1px;left:-1px;background:${c};color:#fff;font:700 13px/1 Barlow,sans-serif;padding:4px 8px;border-radius:7px 0 7px 0">${sel?"✓ ":""}${p.n}</span></button>`}).join("");
+    const rows=anaState.sel.map(s=>{const c=ANA_COL[(s.n-1)%ANA_COL.length];return `<div class="row" style="gap:8px;flex-wrap:wrap"><span style="display:flex;align-items:center;gap:8px;flex:1;min-width:220px"><b style="color:${c}">#${s.n}</b>${free?`<input data-pmname="${s.n}" value="${esc(s.name||"")}" maxlength="40" placeholder="${T("Nama peserta (bebas diisi)","Participant name (free text)")}" style="flex:1">`:`<select data-anasel="${s.n}" style="flex:1"><option value="">— ${T("pilih murid","choose student")} —</option>${anaOptsHtml(s.sid||"")}</select>`}</span><button type="button" class="btn ghost dn" data-a="anaPickRm" data-i="${s.n}">✕</button></div>`}).join("");
+    return `<p class="mu" style="margin:0 0 8px;font-size:13px">${T("Ketuk kotak orang yang ingin dianalisa, lalu isi namanya. Orang yang tidak diketuk tidak dianalisa.","Tap the box of each person to analyze, then fill in their name. People you don't tap are skipped.")}</p>${free?"":`<input id="anaFind" type="search" value="${esc(anaState.q)}" placeholder="🔎 ${T("Cari nama murid...","Search student name...")}" style="margin-bottom:8px">`}<div style="position:relative;display:inline-block;max-width:100%;line-height:0"><img src="${pv.url}" alt="" style="max-width:100%;max-height:420px;border-radius:10px;display:block">${marks}</div>${pv.people.length?"":`<p class="mu" style="margin-top:8px">${T("Tidak ada orang terdeteksi di titik ini. Geser penggeser ke saat seluruh badan terlihat.","No one detected here. Slide to a moment where the whole body is visible.")}</p>`}<div style="margin:10px 0"><label style="font-size:13px">${T("Titik di video","Point in video")}: ${Math.round(pv.t*100)}%</label><input type="range" id="anaT" min="0" max="100" value="${Math.round(pv.t*100)}" style="width:100%" ${anaState.busy?"disabled":""}></div>${rows||`<p class="mu" style="font-size:13px;margin:0">${T("Belum ada orang yang diketuk.","No one selected yet.")}</p>`}`;
+  }
+  const UX_HELP={
+    poomsae:["Poomsae","Menilai jurus dengan standar World Taekwondo: Accuracy (4.00) + Presentation (6.00), termasuk Kihap.","Scores the form by World Taekwondo standard: Accuracy (4.00) + Presentation (6.00), including Kihap."],
+    kyorugi:["Kyorugi","Mengukur posisi guard, jumlah dan tinggi tendangan saat sparring.","Measures guard position, kick count and kick height in sparring."],
+    umum:["Latihan umum","Mengukur tinggi tendangan (Kelenturan) dan kedalaman kuda-kuda (Kekuatan).","Measures kick height (Flexibility) and stance depth (Strength)."]
   };
+  V.ana=()=>{
+    const orig=__anaOrig();
+    if(orig.indexOf('id="anaMode"')<0)return orig;
+    const pool=anaPool(),st=pool.find(x=>x.id===anaState.stu)||pool[0];if(st)anaState.stu=st.id;
+    const mode=anaState.mode,free=pmState.free,owner=ROLE==="owner",multi=uxMulti(),isP=mode==="poomsae";
+    const mark='<div class="sec"><h2>✓',ix=orig.indexOf(mark),origRes=ix>=0?orig.slice(ix):"";
+    const busy=pmState.busy||anaState.busy,msg=pmState.busy?pmState.msg:anaState.msg,err=pmState.err||anaState.err;
+    const nsel=free?anaState.sel.length:anaCount();
+    const h=UX_HELP[mode]||UX_HELP.umum;
+    const kat=pmState.kat||(!free&&st&&st.b)||"";
+    const intro=`<div class="top"><div><h1>${T("Analisa Video","Video Analysis")}</h1><span class="mu">${T("Unggah video, pilih jenis analisa, lalu klik Analisa Sekarang. Video diproses di perangkat ini dan tidak diunggah.","Upload a video, choose the analysis type, then click Analyze Now. The video is processed on this device and not uploaded.")} · ${esc(unitLabel())}</span></div></div>`;
+    const c1=`<div class="sec"><h2>① ${T("Video","Video")}</h2><input id="anaFile" type="file" accept="video/*">${anaState.file?`<p class="mu" style="margin:6px 0 0;font-size:13px">🎞️ ${esc(anaState.file.name)}</p>`:`<p class="mu" style="margin:6px 0 0;font-size:13px">${T("Tips: kamera diam, seluruh badan terlihat, 10–30 detik. Untuk Kihap, rekam dengan suara.","Tips: steady camera, full body visible, 10–30 seconds. Record with sound for Kihap.")}</p>`}</div>`;
+    const c2=`<div class="sec"><h2>② ${T("Jenis analisa","Analysis type")}</h2><div class="f" style="grid-template-columns:1fr"><div><label>${T("Jenis video","Video type")}</label><select id="anaMode">${[["poomsae","Poomsae"],["kyorugi","Kyorugi (sparring)"],["umum",T("Latihan umum","General training")]].map(m=>`<option value="${m[0]}" ${mode===m[0]?"selected":""}>${m[1]}</option>`).join("")}</select></div><div><label>${T("Hasil dipakai untuk","Result is used for")}</label><select id="pmTarget"><option value="student" ${!free?"selected":""}>${T("Murid → masuk Penilaian","Student → saved to Evaluations")}</option><option value="free" ${free?"selected":""}>${T("Analisa bebas (tidak disimpan)","Free analysis (not saved)")}</option></select></div>${owner?`<div><label>${T("Jumlah orang di video","People in the video")}</label><select id="uxPeople"><option value="one" ${!multi?"selected":""}>${T("Satu orang","One person")}</option><option value="multi" ${multi?"selected":""}>${T("Beberapa orang (ketuk di video)","Several people (tap in the video)")}</option></select></div>`:""}</div><p class="mu" style="margin:10px 0 0;font-size:13px">${isEN()?h[2]:h[1]}</p></div>`;
+    const who=multi?uxPickHtml():(free?`<div class="f" style="grid-template-columns:1fr"><div><label>${T("Nama peserta (opsional)","Participant name (optional)")}</label><input id="pmFname" value="${esc(pmState.fname)}" maxlength="40" placeholder="${T("mis. nama sendiri","e.g. your own name")}"></div></div>`:`<div><label>${T("Murid","Student")}</label>${anaStuHtml(st)}</div>`);
+    const c3=`<div class="sec"><h2>③ ${T("Peserta","Participant")}</h2>${who}</div>`;
+    const pset=isP?`<div class="f" style="grid-template-columns:1fr"><div><label>${T("Nama jurus","Poomsae name")}</label><select id="pmJurus">${PM_JURUS.map(j=>`<option ${pmState.jurus===j?"selected":""}>${j}</option>`).join("")}</select></div><div><label>${T("Kategori / sabuk","Category / belt")}</label><input id="pmKat" value="${esc(kat)}" placeholder="${T("mis. Cadet, Sabuk Hijau","e.g. Cadet, Green Belt")}"></div><div><label>${T("Konteks","Context")}</label><select id="pmCtx"><option value="UKT" ${pmState.ctx==="UKT"?"selected":""}>UKT</option><option value="Simulasi Kejuaraan" ${pmState.ctx!=="UKT"?"selected":""}>${T("Simulasi Kejuaraan","Championship simulation")}</option></select></div><div><label>${T("Gerakan lambat wajib?","Mandatory slow motion?")}</label><select id="pmSlow"><option value="" ${pmState.slow===""?"selected":""}>${T("Tidak diketahui (aturan durasi tidak dipakai)","Unknown (duration rule not applied)")}</option><option value="1" ${pmState.slow==="1"?"selected":""}>${T("Ya (Taegeuk 5–8 / Sabuk Hitam)","Yes (Taegeuk 5–8 / Black Belt)")}</option><option value="0" ${pmState.slow==="0"?"selected":""}>${T("Tidak (tempo normal)","No (normal tempo)")}</option></select></div></div><div class="f" style="grid-template-columns:1fr;margin-top:10px"><div><label>🗣️ ${T("Jumlah Kihap wajib","Required Kihap count")}</label><input id="pmKihap" type="number" min="0" max="10" inputmode="numeric" value="${esc(pmState.kihap)}" placeholder="${T("kosong = tidak dinilai","empty = not scored")}"></div><div><label>🗣️ ${T("Kihap terdengar? (koreksi manual)","Kihap heard? (manual override)")}</label><select id="pmKihapM"><option value="" ${pmState.kihapManual===""?"selected":""}>${T("Otomatis dari suara video","Automatic from video sound")}</option><option value="1" ${pmState.kihapManual==="1"?"selected":""}>${T("Ya, terdengar","Yes, heard")}</option><option value="0" ${pmState.kihapManual==="0"?"selected":""}>${T("Tidak ada Kihap","No Kihap")}</option></select></div></div><p class="mu" style="margin:8px 0 0;font-size:12.5px">${T("Kihap dibaca dari audio video. Kalau suara tidak terbaca (video senyap atau terlalu ramai), pilih koreksi manual lalu klik Analisa lagi; hasil dihitung ulang dengan cepat.","Kihap is read from the video audio. If the sound is not readable (silent or noisy), choose the manual override and click Analyze again; results are recomputed quickly.")}</p>`:(!free&&!multi?`<div class="f" style="grid-template-columns:1fr"><div><label>${T("Mesin analisa","Analysis engine")}</label><select id="anaEngine"><option value="device" ${anaState.engine!=="cloud"?"selected":""}>${T("Di perangkat ini (gratis, paling privat)","On this device (free, most private)")}</option><option value="cloud" ${anaState.engine==="cloud"?"selected":""}>${T("AI Cloud (cadangan, kirim gambar kecil)","AI Cloud (backup, sends small frames)")}</option></select></div></div>`:"");
+    const c4=pset?`<div class="sec"><h2>④ ${isP?T("Pengaturan Poomsae","Poomsae settings"):T("Lanjutan","Advanced")}</h2>${pset}</div>`:"";
+    const lbl=busy?"⏳ "+esc(msg):multi?"🎥 "+T("Analisa ","Analyze ")+nsel+" "+T("orang","people"):"🎥 "+T("Analisa Sekarang","Analyze Now");
+    const go=`<div class="sec"><button class="btn" data-pm="go" ${busy||(multi&&!nsel)?"disabled":""}>${lbl}</button>${busy&&anaState.busy?` <button class="btn ghost dn" data-a="anaCancel">${T("Batal","Cancel")}</button>`:""}${multi&&!nsel&&!busy?`<p class="mu" style="margin:8px 0 0;font-size:13px">${T("Ketuk orang di gambar dulu.","Tap people in the image first.")}</p>`:""}${err?`<p style="margin:10px 0 0"><span class="pill warn">${esc(err)}</span></p>`:""}</div>`;
+    const res=isP?pmResultsHtml():(free?fkHtml():origRes+(multi?"":"")+anaMultiHtml());
+    return need()+intro+c1+c2+c3+c4+go+res;
+  };
+  function pmResultsHtml(){
+    const rep=pmState.rep,multi=pmState.multi;let out="";
+    if(rep)out+=pmResultHtml(rep,{title:(pmState.free&&pmState.repName?pmState.repName+" · ":"")+pmState.jurus,ai:pmState.ai,aiBusy:pmState.aiBusy,aiErr:pmState.aiErr,aiAct:"ai",i:""})+`<p style="margin:6px 0 0"><button class="btn ghost" data-pm="copy">📋 ${T("Salin prompt + JSON untuk AI","Copy prompt + JSON for AI")}</button></p>`;
+    if(multi)out+=pmMultiHtml(multi);
+    return pmSavedHtml()+out;
+  }
   document.addEventListener("change",e=>{
     const t=e.target;
-    if(t.id==="anaMode"){setTimeout(draw,0);return;}
-    if(t.id==="pmTarget"){pmState.free=t.value==="free";pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";pmState.ai="";draw();return;}
-    if(t.id==="pmCtx"||t.id==="pmSlow"||t.id==="pmKihap"){if(t.id==="pmCtx")pmState.ctx=t.value;else if(t.id==="pmSlow")pmState.slow=t.value;else pmState.kihap=String(t.value).slice(0,2);pmState.rep=null;pmState.multi=null;pmState.ai="";draw();return;}
-    if(t.id==="pmJurus"){pmState.jurus=t.value;pmState.rep=null;pmState.multi=null;pmState.ai="";try{localStorage.setItem("pm_jurus",t.value)}catch(x){}draw();return;}
+    if(t.id==="anaMode"){setTimeout(()=>{pmReset();draw()},0);return;}
+    if(t.id==="pmTarget"){pmState.free=t.value==="free";pmReset();draw();return;}
+    if(t.id==="uxPeople"){
+      pmState.people=t.value;pmReset();anaState.sel=[];anaState.multi=null;anaState.res=null;
+      if(t.value==="multi"&&ROLE==="owner"){anaState.pickOn=true;if(anaState.file){anaPreview(anaState.prevT);return;}}
+      else{anaState.pickOn=false;anaState.prev=null;}
+      draw();return;
+    }
+    if(t.id==="anaFile"){pmReset();pmState.cache=null;draw();setTimeout(()=>{if(uxMulti()&&anaState.file){anaState.pickOn=true;anaPreview(anaState.prevT)}},60);return;}
+    if(t.id==="pmCtx"||t.id==="pmSlow"||t.id==="pmKihap"||t.id==="pmKihapM"){if(t.id==="pmCtx")pmState.ctx=t.value;else if(t.id==="pmSlow")pmState.slow=t.value;else if(t.id==="pmKihapM")pmState.kihapManual=t.value;else pmState.kihap=String(t.value).slice(0,2);pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";pmState.ai="";draw();return;}
+    if(t.id==="pmJurus"){pmState.jurus=t.value;pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";pmState.ai="";try{localStorage.setItem("pm_jurus",t.value)}catch(x){}draw();return;}
   });
   document.addEventListener("input",e=>{
     const t=e.target;
@@ -2717,53 +2863,12 @@ ${JSON.stringify(tel)}`;
     const b=e.target.closest("[data-pm]");if(!b)return;
     e.stopImmediatePropagation();e.preventDefault();
     const a=b.dataset.pm,st=S.find(x=>x.id===anaState.stu),kat=pmState.kat||(st&&st.b)||"";
-    if(a==="run"){
-      if(pmState.busy)return;
-      if(!pmState.free){
-        if(!st)return toast(T("Pilih murid dulu","Select a student first"));
-        if(!st.foto)return toast(T("Murid ini belum punya izin foto/video","This student has no photo/video consent"));
-      }
-      if(!anaState.file)return toast(T("Pilih video dulu","Choose a video first"));
-      pmState.busy=true;pmState.err="";pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";pmState.ai="";pmState.aiErr="";pmState.msg=T("Memulai...","Starting...");draw();
-      try{
-        const {fr,dur}=await pmExtract(anaState.file,m=>{pmState.msg=m;const bt=document.querySelector('[data-pm="run"]');if(bt)bt.textContent="⏳ "+m});
-        pmState.msg=T("Mendeteksi suara Kihap...","Detecting Kihap sound...");draw();
-        const audio=await pmAudio(anaState.file);
-        pmState.repName=pmState.free?String(pmState.fname||"").trim():"";
-        pmState.rep=pmTelemetry(fr,dur,{audio,kihapReq:pmState.kihap===""?null:Number(pmState.kihap),ctx:pmState.ctx,slow:pmState.slow==="1"?true:pmState.slow==="0"?false:null});
-        if(!pmState.free)await pmAutoSave([{st,rep:pmState.rep}]);
-      }catch(err){pmState.err=err.message||String(err)}
-      pmState.busy=false;pmState.msg="";draw();return;
-    }
-    if(a==="pick"){
-      if(!anaState.file)return toast(T("Pilih video dulu","Choose a video first"));
-      pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";
-      anaState.pickOn=true;anaState.multi=null;anaState.res=null;anaState.sel=[];
-      try{await anaPreview(anaState.prevT)}catch(err){anaState.err=err.message||String(err);draw()}
-      return;
-    }
+    if(a==="go")return uxGo();
+    if(a==="reload"){anaState.pickOn=true;anaState.sel=[];anaState.multi=null;return anaPreview(anaState.prevT);}
     if(a==="undo"){
       const sv=pmState.saved;if(!sv)return;
       try{await pmUndoEval(sv);pmState.saved=null;toast(T("Penilaian dibatalkan","Evaluation undone"))}catch(err){toast(T("Gagal membatalkan","Undo failed"))}
       draw();return;
-    }
-    if(a==="runMulti"){
-      if(pmState.busy)return;
-      const free=pmState.free,asg=free?anaState.sel:anaState.sel.filter(x=>x.sid);
-      if(!asg.length||!anaState.file||!anaState.prev)return toast(free?T("Pilih video dan ketuk orangnya dulu","Choose a video and tap people first"):T("Pilih video, ketuk orang, dan pilih muridnya dulu","Choose a video, tap people and assign students first"));
-      const people=asg.map(x=>({n:x.n,st:S.find(y=>y.id===x.sid)||(free?{id:"",_n:String(x.name||"").trim()||T("Orang #","Person #")+x.n,b:""}:null),box:anaState.prev.people.find(p=>p.n===x.n)})).filter(x=>x.st&&x.box);
-      if(!free&&people.some(x=>!x.st.foto))return toast(T("Ada murid tanpa izin foto/video","A student has no photo/video consent"));
-      pmState.busy=true;pmState.err="";pmState.rep=null;pmState.multi=null;pmState.saved=null;pmState.saveErr="";pmState.msg=T("Memulai...","Starting...");draw();
-      try{
-        const rw=await poseAnalyzeMulti(anaState.file,"__raw",people,anaState.prev.t,m=>{pmState.msg=m;const bt=document.querySelector('[data-pm="runMulti"]');if(bt)bt.textContent="⏳ "+m});
-        const audio=people.length===1?await pmAudio(anaState.file):null;
-        pmState.multi=rw.tracks.map(t=>{
-          try{const fr=rw.ts.map((tt,i)=>({t:tt,p:t.pts[i]||null}));return {st:t.st,n:t.n,warn:rw.warn,rep:pmTelemetry(fr,rw.dur,{audio,kihapReq:pmState.kihap===""?null:Number(pmState.kihap),ctx:pmState.ctx,slow:pmState.slow==="1"?true:pmState.slow==="0"?false:null}),ai:"",aiBusy:false,aiErr:""}}
-          catch(err){return {st:t.st,n:t.n,warn:rw.warn,error:err.message||String(err)}}
-        });
-        if(!pmState.free)await pmAutoSave(pmState.multi.filter(x=>x.rep&&x.st&&x.st.id).map(x=>({st:x.st,rep:x.rep})));
-      }catch(err){pmState.err=err.message||String(err)}
-      pmState.busy=false;pmState.msg="";draw();return;
     }
     if(a==="copyN"){
       const it=pmState.multi&&pmState.multi[+b.dataset.i];if(!it||!it.rep)return;
