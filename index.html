@@ -2467,26 +2467,27 @@ DATA JURUS:
 - Konteks: ${konteks||"UKT"}
 
 TUGAS ANDA:
-1. Analisa seluruh log penyimpangan sudut sendi, durasi tempo, dan stabilitas keseimbangan yang tercatat pada data JSON di bawah.
-2. Konversikan setiap penyimpangan menjadi penilaian resmi World Taekwondo (WT):
-   - Accuracy (Maks 4.00): Kurangi -0.1 untuk penyimpangan sudut ringan (minor) dan -0.3 untuk kesalahan urutan, keseimbangan goyang berat, atau durasi gerakan lambat di luar standar ${PM_DUR[0]}–${PM_DUR[1]} detik (major, hanya jika is_slow_motion: true).
-   - Presentation (Maks 6.00): Nilai Speed & Power (0–2.00), Rhythm & Tempo (0–2.00), dan Expression of Energy (0–2.00) berdasarkan data kecepatan puncak (peak velocity), konsistensi jeda antar gerakan, dan stabilitas postur.
-3. Buat tabel Log Kesalahan per Timestamp berisi: Timestamp, Urutan Gerakan, Kesalahan Biomekanik Spesifik (sebutkan angka sudut/penyimpangannya), dan Potongan Poin.
+1. Analisa seluruh log (jenis, tingkat, potongan, timestamp), ringkasan, dan parameter pada data JSON di bawah.
+2. Nilai menurut aturan World Taekwondo (Poomsae Competition Rules and Interpretation, Pasal 16):
+   - Accuracy (basis 4.00): -0.1 untuk setiap kesalahan kecil pada gerakan (kuda-kuda atau gerakan tangan menyimpang dari pedoman penilaian); -0.3 untuk setiap kesalahan besar (gerakan salah atau tidak ada di pedoman, Kihap tidak dibuat atau salah momen, berhenti sementara 3 detik atau lebih, pandangan tidak mengikuti arah gerakan, kaki yang terangkat menyentuh lantai pada Hakdari-seogi, Jireugi tanpa tenaga dan suara, napas terlalu keras); -0.6 jika poomsae diulang dari awal.
+   - Presentation (basis 6.00): TIDAK dipotong per kesalahan, dinilai dari keseluruhan penampilan: Speed & Power (0-2.00), Rhythm & Tempo (0-2.00; kontrol kekuatan, kecepatan, dan ritme; kecepatan, tenaga, dan ritme yang seragam dari awal sampai akhir dikurangi), Expression of Energy (0-2.00; ukuran gerakan, konsentrasi, pandangan, Kihap, sikap, percaya diri).
+3. Buat tabel Log Kesalahan per Timestamp berisi: Timestamp, Urutan Gerakan, Kesalahan (sebutkan angka dari data), dan Potongan Poin.
 4. Susun 3 Program Drill Korektif paling prioritas (Nama Drill, Target Otot/Sendi, Langkah Eksekusi, dan Set/Repetisi) untuk memperbaiki kesalahan terbesar pada data tersebut.
 
 PARAMETER TAMBAHAN (OPSIONAL DI JSON):
 - head_yaw_aligned: Boolean, apakah arah hadap wajah/pandangan mata (gaze) mengarah tepat ke sasaran sebelum gerakan dikunci.
-- kihap_detected: Boolean, terdeteksi puncak suara Kihap pada step wajib.
-- is_slow_motion: Boolean, penanda apakah step tersebut memang gerakan lambat wajib (misal pada Taegeuk 5–8 / Poomsae Sabuk Hitam).
+- kihap_detected: Boolean, apakah Kihap terbaca sesuai jumlah wajib jurus tersebut.
+- is_slow_motion: Boolean; true jika ada gerakan lambat yang disengaja (misal Taegeuk 6-8 atau poomsae sabuk hitam), maka deteksi berhenti 3 detik dinonaktifkan.
 
-ATURAN GUARDRAIL TAMBAHAN:
+ATURAN GUARDRAIL:
 1. Null-Safe (Anti-Halusinasi): Jika ada parameter yang bernilai null atau tidak tercantum di JSON, ABAIKAN parameter tersebut. Jangan mengarang angka atau memberi potongan poin.
-2. Validasi Gerakan Lambat: Aturan durasi 5.0 – 8.0 detik HANYA berlaku jika is_slow_motion: true. Jangan terapkan aturan ini pada gerakan tempo normal.
-3. Penilaian Gaze & Kihap: Gunakan head_yaw_aligned dan kihap_detected (jika tersedia) sebagai dasar utama menilai sub-kriteria Expression of Energy (0.00 – 2.00).
-4. Jangkar Angka Presentation (wajib dipatuhi agar skor realistis):
-   - Jika Konteks = UKT: rentang normal total Presentation adalah 4.20 – 5.10 (tiap sub-kriteria di kisaran 1.40 – 1.70).
-   - Jika Konteks = Simulasi Kejuaraan: gunakan standar ketat di kisaran 3.60 – 4.70. Skor total Presentation di atas 4.80 HANYA boleh diberikan jika peak_velocity konsisten tinggi hingga step terakhir, hip_wobble hampir nol, dan head_yaw_aligned selalu true.
-5. Kihap (aturan WT): Kihap tidak dibuat atau salah momen adalah kesalahan mayor (-0.3) pada Accuracy, dan ikut menentukan Expression of Energy. Pakai kihap_wajib_jumlah dan kihap_wajib_gerakan dari JSON; jangan mengarang jumlah atau titik Kihap sendiri.
+2. Potongan resmi hanya berasal dari entri log bertingkat "major" atau "minor" yang potongannya bukan 0 (Kihap dan berhenti sementara). Entri bertingkat "observasi" (potongan 0) adalah catatan biomekanik perkiraan: WT tidak menetapkan angka sudut atau jarak, jadi jangan beri potongan dan jangan sebut itu kesalahan resmi; jadikan saran perbaikan. Kesalahan kuda-kuda dan gerakan tangan menurut pedoman resmi tidak bisa dinilai dari data ini karena nama dan urutan gerakan tidak tersedia.
+3. Durasi: jangan memberi potongan karena durasi klip. Angka 5-8 detik pada tabel referee hanya untuk gerakan lambat tertentu per gerakan, bukan seluruh klip.
+4. Penilaian Gaze & Kihap: gunakan head_yaw_aligned dan kihap_detected (jika tersedia) sebagai dasar utama menilai Expression of Energy (0.00 - 2.00).
+5. Jangkar angka Presentation (kalibrasi pelatih, bukan aturan WT; wajib dipatuhi agar skor realistis):
+   - Jika Konteks = UKT: rentang normal total Presentation adalah 4.20 - 5.10 (tiap sub-kriteria di kisaran 1.40 - 1.70).
+   - Jika Konteks = Simulasi Kejuaraan: gunakan standar ketat di kisaran 3.60 - 4.70. Skor total Presentation di atas 4.80 HANYA boleh diberikan jika peak_velocity konsisten tinggi hingga step terakhir, hip_wobble hampir nol, dan head_yaw_aligned selalu true.
+6. Kihap (aturan WT): Kihap tidak dibuat atau salah momen adalah kesalahan besar (-0.3) pada Accuracy dan ikut menentukan Expression of Energy. Pakai kihap_wajib_jumlah dan kihap_wajib_gerakan dari JSON; jangan mengarang jumlah atau titik Kihap sendiri.
 
 DATA TELEMETRI JSON LOKAL:
 ${JSON.stringify(tel)}`;
@@ -2497,6 +2498,7 @@ ${JSON.stringify(tel)}`;
     asym:{n:"Cermin Simetri Lutut",t:"Adduktor, glute medius, lutut",s:["Berdiri di depan cermin/kamera dari depan dalam kuda-kuda lebar.","Pastikan kedua lutut searah dengan ujung kaki dan bertekuk sama.","Tahan 15 detik, koreksi, ulangi."],r:"3 set × 15 detik"},
     tempo:{n:"Latihan Metronom Poomsae",t:"Koordinasi, ritme pernapasan",s:["Pasang metronom, satu gerakan = satu ketukan (60–70 bpm).","Berhenti tegas di akhir setiap teknik 0,3 detik, lalu lanjut tanpa ragu.","Naikkan tempo bertahap sampai total jurus masuk standar durasi."],r:"4 set × 1 jurus penuh"},
     speed:{n:"Snap Teknik + Hoshinsul Ringan",t:"Bahu, tricep, pinggul (rotasi), betis",s:["Latih satu teknik (mis. momtong makki) dengan fokus mulai pelan, ledakan di ujung gerakan.","Gunakan karet resistensi ringan 10 repetisi, lalu tanpa karet 10 repetisi secepat mungkin.","Gabungkan ke 3 gerakan berurutan dengan kontras lambat-cepat."],r:"4 set × 10 repetisi per teknik"},
+    freeze:{n:"Hafalan Urutan Tanpa Jeda",t:"Memori gerak, konsentrasi",s:["Pecah jurus jadi 3–4 bagian dan hafalkan satu per satu sambil menyebut nama tekniknya.","Latih tiap bagian berulang sampai lancar, lalu sambung dua bagian tanpa berhenti.","Jalankan jurus penuh tanpa jeda lebih dari 2 detik; bila lupa, lanjutkan dari bagian berikutnya, jangan berhenti (jeda 3 detik atau lebih dipotong 0.3)."],r:"5 percobaan × 1 jurus penuh"},
     kihap:{n:"Latihan Kihap Tepat Momen",t:"Diafragma, otot perut (core), pernapasan",s:["Hafalkan gerakan tempat Kihap (lihat info resmi jurus) dan tandai di video latihan.","Latih Kihap dari perut (diafragma), pendek dan tegas, tepat saat teknik mencapai titik akhir (bersamaan dengan hentakan/pukulan).","Rekam dengan suara dan cek: jumlah Kihap sesuai aturan dan selaras dengan puncak gerakan."],r:"5 set × 1 jurus penuh, fokus Kihap"},
     dur:{n:"Pacing Durasi Jurus",t:"Kontrol tempo, kondisi aerobik",s:["Rekam satu segmen jurus dan ukur durasinya.","Targetkan "+PM_DUR[0]+"–"+PM_DUR[1]+" detik; sesuaikan jeda antar gerakan, bukan kecepatan teknik.","Ulangi sampai tiga percobaan berturut-turut masuk target."],r:"5 percobaan × 1 segmen"}
   };
@@ -2598,6 +2600,8 @@ ${JSON.stringify(tel)}`;
         else if(lean>10)add(mid.t,"lean","minor",`Badan miring ${Math.round(lean)}° dari vertikal (batas 10°)`,-0.1,Math.round(lean));
         if(sway>0.3)add(mid.t,"sway","major",`Keseimbangan goyang berat: pinggul bergeser ${sway.toFixed(2)}× panjang torso saat diam (batas 0.30)`,-0.3,Math.round(sway*100)/100);
         else if(sway>0.15)add(mid.t,"sway","minor",`Goyang ringan: pinggul bergeser ${sway.toFixed(2)}× panjang torso (batas 0.15)`,-0.1,Math.round(sway*100)/100);
+        const span=seg[seg.length-1].t-seg[0].t; // aturan WT: berhenti sementara 3 detik atau lebih = kesalahan besar (-0.3). Hanya dinilai jika diketahui TIDAK ada gerakan lambat disengaja.
+        if(slow===false&&span>=3&&seg.length>=span*4&&seg[0].t>dur*0.06&&seg[seg.length-1].t<dur*0.94)add(mid.t,"freeze","major",`Berhenti sementara ${span.toFixed(1)} dtk di tengah penampilan (aturan WT: 3 dtk atau lebih = kesalahan besar)`,-0.3,Math.round(span*10)/10);
       }
       i=j+1;
     }
@@ -2607,9 +2611,8 @@ ${JSON.stringify(tel)}`;
     for(let k=1;k<peaks.length;k++){const g=gaps[k-1];
       if(mg&&g>1.6*mg&&g>1.2)add(peaks[k].t,"tempo","minor",`Jeda terlalu lama ${g.toFixed(1)} dtk (median ${mg.toFixed(1)} dtk)`,-0.1,Math.round(g*10)/10);
       else if(mg&&g<0.5*mg&&g<0.45)add(peaks[k].t,"tempo","minor",`Gerakan terburu-buru: jeda ${g.toFixed(1)} dtk (median ${mg.toFixed(1)} dtk)`,-0.1,Math.round(g*10)/10);}
-    if(slow===true&&dur>PM_DUR[1])add(dur,"dur","major",`Durasi ${dur.toFixed(1)} dtk melebihi standar ${PM_DUR[0]}–${PM_DUR[1]} dtk (lambat)`,-0.3,Math.round(dur*10)/10);
-    else if(slow===true&&dur<PM_DUR[0])add(dur,"dur","minor",`Durasi ${dur.toFixed(1)} dtk di bawah standar ${PM_DUR[0]}–${PM_DUR[1]} dtk (terlalu cepat)`,-0.1,Math.round(dur*10)/10);
     // rapikan: maks 1 temuan per jenis per 1 detik, urut waktu
+    evs.forEach(e=>{if(e.jenis!=="freeze"){e.tingkat="observasi";e.potongan=0}}); // WT tidak menetapkan angka sudut/jarak: hanya catatan, tanpa potongan
     evs.sort((a,b)=>a.t-b.t);
     const log=[];evs.forEach(e=>{const o=log.find(x=>x.jenis===e.jenis&&Math.abs(x.t-e.t)<1);if(!o)log.push(e);else if(e.potongan<o.potongan)Object.assign(o,e)});
     const kneeMin=Math.round(q(rows.map(r=>Math.min(r.kL,r.kR)),0.1)),leanMed=Math.round(q(rows.map(r=>r.lean),0.5)*10)/10;
@@ -2633,10 +2636,17 @@ ${JSON.stringify(tel)}`;
       log.push({t:Math.round(dur*10)/10,gerakan:moveAt(dur),jenis:"kihap",tingkat:"major",detail:"Kihap kurang/salah momen: "+(man===false?"tidak ada":"selaras "+(synced||0)+" dari "+req+" wajib")+(opt.kihapAt&&opt.kihapAt.length?" (resmi: gerakan "+opt.kihapAt.join(" & ")+")":""),potongan:-0.3*miss,nilai:miss});
     }
     const accuracy=r2(Math.max(0,4+log.reduce((s,e)=>s+e.potongan,0)));
-    let tq=cv===null?0.5:1-cl(cv/0.8,0,1);if(slow===true&&(dur<PM_DUR[0]||dur>PM_DUR[1]))tq=Math.max(0,tq-0.15);
+    // Rhythm & Tempo (WT): perubahan kecepatan/tenaga + ritme teratur; seragam dari awal sampai akhir dikurangi
+    const mvv=rows.filter(r=>r.ms>=thr).map(r=>r.ms),mvm=mvv.length?mvv.reduce((a,b)=>a+b,0)/mvv.length:0;
+    const varQ=mvv.length>=4&&mvm>0?cl(Math.sqrt(mvv.reduce((a,b)=>a+(b-mvm)**2,0)/mvv.length)/mvm/0.6,0,1):0.5;
+    const regQ=cv===null?0.5:1-cl(cv/0.8,0,1);
+    const tq=0.5*varQ+0.5*regQ;
+    // ukuran gerakan (Expression of Energy): jangkauan pergelangan tangan relatif panjang torso
+    const wd=[];rows.forEach(r=>[0,1].forEach(k=>{const e=r.ex[k];if(e)wd.push(Math.hypot(e.x-r.hp.x,e.y-r.hp.y)/tor0)}));
+    const sizeQ=wd.length?cl(q(wd,0.9)/1.0,0,1):0.5;
     const headOk=yawFlags.length>=2?yawFlags.filter(Boolean).length/yawFlags.length:null;
-    // Expression: gaze (jika ada) jadi dasar utama; kihap (audio) belum diukur di perangkat sehingga diabaikan (null)
-    const posture=0.5*stab+0.5*contrast,comps=[headOk,kq].filter(x=>x!==null),eq=comps.length?0.7*(comps.reduce((a,b)=>a+b,0)/comps.length)+0.3*posture:posture;
+    // Expression of Energy (WT): pandangan + Kihap (jika terbaca) jadi dasar utama, ditambah ukuran gerakan, konsentrasi/kestabilan, dan kontras tenaga
+    const posture=(stab+contrast+sizeQ)/3,comps=[headOk,kq].filter(x=>x!==null),eq=comps.length?0.7*(comps.reduce((a,b)=>a+b,0)/comps.length)+0.3*posture:posture;
     const sq=cl(pv/5,0,1);
     const wob=(()=>{const xs=stillRows.map(r=>r.hp.x/tor0);return xs.length?Math.max(...xs)-Math.min(...xs):0})();
     const lastPk=peaks.slice(-3).map(p=>p.ms),medPk=q(peaks.map(p=>p.ms),0.5);
@@ -2648,7 +2658,7 @@ ${JSON.stringify(tel)}`;
     const presentation=r2(pres.speedPower+pres.rhythmTempo+pres.expression);
     const tel={konteks:ctx,durasi_detik:Math.round(dur*10)/10,frame_terdeteksi_persen:Math.round(valid*100),jumlah_gerakan_terdeteksi:peaks.length,
       is_slow_motion:slow,head_yaw_aligned:headOk===null?null:headOk===1,head_yaw_aligned_persen:headOk===null?null:Math.round(headOk*100),kihap_detected:kihapOk,kihap_sumber:man!==null?"manual":(aud?"otomatis":null),kihap_wajib_jumlah:req,kihap_wajib_gerakan:opt.kihapAt&&opt.kihapAt.length?opt.kihapAt:null,kihap_aturan:req!==null?"WT: Kihap tidak dibuat atau salah momen = kesalahan mayor -0.3 (Accuracy)":null,kihap_terdeteksi_jumlah:aud?aud.length:null,kihap_waktu_detik:aud&&aud.length?aud.map(b=>Math.round(b.t*10)/10):null,kihap_sinkron_dengan_gerakan:synced,
-      standar_durasi_detik_jika_slow:PM_DUR,urutan_gerakan:"tidak diverifikasi (hanya kecepatan, bukan nama teknik)",
+      aturan_penilaian:"WT Poomsae Competition Rules and Interpretation (Sept 2024) Pasal 16",urutan_gerakan:"tidak diverifikasi (hanya kecepatan, bukan nama teknik)",
       ringkasan:{sudut_lutut_terendah_deg:kneeMin,kemiringan_badan_median_deg:leanMed,peak_velocity_torso_per_dtk:Math.round(pv*10)/10,peak_velocity_konsisten_hingga_akhir:velConsistent,hip_wobble:Math.round(wob*100)/100,konsistensi_jeda_cv:cv===null?null:Math.round(cv*100)/100,median_jeda_dtk:Math.round(mg*10)/10},
       log_penyimpangan:log.map(e=>({t:e.t,gerakan_ke:e.gerakan,jenis:e.jenis,tingkat:e.tingkat,detail:e.detail,potongan:e.potongan}))};
     // null-safe: buang parameter null supaya tidak dikarang AI
@@ -2666,21 +2676,21 @@ ${JSON.stringify(tel)}`;
     return chip(k.ok?"ok":"warn",(k.ok?"✓ ":"✗ ")+w+" · "+T("wajib ","required ")+k.req);
   }
   function pmPickDrills(rep){
-    const sum={};rep.log.forEach(e=>{sum[e.jenis]=(sum[e.jenis]||0)-e.potongan});
+    const sum={};rep.log.forEach(e=>{sum[e.jenis]=(sum[e.jenis]||0)+Math.max(0.1,-e.potongan)});
     const lis=Object.keys(sum).sort((a,b)=>sum[b]-sum[a]).filter(k=>pmDrills[k]);
     if(rep.pres.speedPower<1.2&&!lis.includes("speed"))lis.push("speed");
     if(rep.pres.rhythmTempo<1.2&&!lis.includes("tempo"))lis.push("tempo");
     ["stance","sway","lean","tempo","speed"].forEach(k=>{if(!lis.includes(k))lis.push(k)});
     return lis.slice(0,3).map(k=>pmDrills[k]);
   }
-  const PM_TYPE={kihap:"Kihap",stance:"Kuda-kuda",asym:"Simetri",lean:"Postur",sway:"Keseimbangan",tempo:"Tempo",dur:"Durasi"};
+  const PM_TYPE={freeze:"Berhenti",kihap:"Kihap",stance:"Kuda-kuda",asym:"Simetri",lean:"Postur",sway:"Keseimbangan",tempo:"Tempo",dur:"Durasi"};
   function pmResultHtml(rep,o){
     const p=rep.pres;
     const kp=(v,l,m)=>`<div class="kpi"><strong>${v.toFixed(2)}</strong>${l} <span class="mu" style="font-size:11px">/ ${m}</span></div>`;
-    const rows=rep.log.length?rep.log.map(e=>`<tr><td>${e.t.toFixed(1)}s</td><td>#${e.gerakan}</td><td><b>${esc(PM_TYPE[e.jenis]||e.jenis)}</b> – ${esc(e.detail)}</td><td style="color:var(--rd);white-space:nowrap">${e.potongan.toFixed(1)}</td></tr>`).join(""):`<tr><td colspan="4" class="mu">${T("Tidak ada penyimpangan terdeteksi.","No deviations detected.")}</td></tr>`;
+    const rows=rep.log.length?rep.log.map(e=>`<tr><td>${e.t.toFixed(1)}s</td><td>#${e.gerakan}</td><td><b>${esc(PM_TYPE[e.jenis]||e.jenis)}</b> – ${esc(e.detail)}</td><td style="white-space:nowrap;${e.potongan?"color:var(--rd)":"opacity:.6"}">${e.potongan?e.potongan.toFixed(1):"obs."}</td></tr>`).join(""):`<tr><td colspan="4" class="mu">${T("Tidak ada penyimpangan terdeteksi.","No deviations detected.")}</td></tr>`;
     const dr=pmPickDrills(rep).map((d,i)=>`<div style="border-top:1px solid var(--ln);padding:12px 0"><b>${i+1}. ${esc(d.n)}</b><div class="mu" style="font-size:13px;margin:4px 0">🎯 ${esc(d.t)}</div><ol style="margin:6px 0 6px 18px;padding:0;font-size:14px">${d.s.map(x=>`<li>${esc(x)}</li>`).join("")}</ol><span class="pill">${esc(d.r)}</span></div>`).join("");
     const ai=o.ai?`<div style="white-space:pre-wrap;font-size:14px;line-height:1.55;margin-top:8px">${esc(o.ai)}</div>`:"";
-    return `<div class="sec"><h2>📊 ${esc(o.title)} <span class="pill">${T("Keyakinan","Confidence")}: ${esc(rep.conf)}</span></h2><div class="kpis" style="margin:12px 0;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(rep.total,"Total",10)}${kp(rep.accuracy,"Accuracy",4)}${kp(rep.presentation,"Presentation",6)}</div><div class="kpis" style="margin:0 0 12px;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(p.speedPower,"Speed & Power",2)}${kp(p.rhythmTempo,"Rhythm & Tempo",2)}${kp(p.expression,"Expression",2)}</div><p class="mu" style="margin:0 0 10px;font-size:13px">🗣️ Kihap: ${pmKihapLine(rep.kihap)}</p><h3 style="margin:14px 0 6px">${T("Log Kesalahan per Timestamp","Error Log by Timestamp")}</h3><div style="overflow-x:auto"><table style="width:100%;font-size:13.5px"><thead><tr><th align="left">${T("Waktu","Time")}</th><th align="left">${T("Gerakan","Move")}</th><th align="left">${T("Kesalahan biomekanik","Biomechanical error")}</th><th align="left">${T("Poin","Pts")}</th></tr></thead><tbody>${rows}</tbody></table></div><h3 style="margin:16px 0 4px">${T("3 Drill Korektif Prioritas","Top 3 Corrective Drills")}</h3>${dr}<div class="note" style="margin-top:10px">${T("Ini estimasi otomatis dari pose tubuh, bukan penilaian resmi. Urutan gerakan tidak diverifikasi, dan Ambang sudut, jeda, dan goyang adalah perkiraan internal, belum dikalibrasi ke standar WT. Kihap dideteksi dari lonjakan suara pendek di audio video. Arah pandangan hanya perkiraan dari posisi hidung dan telinga.","This is an automatic estimate from body pose, not an official score. Move order is not verified, and Angle, pause and sway thresholds are internal estimates, not calibrated to WT standards. Kihap is detected from short loud bursts in the video audio. Gaze is only estimated from nose and ear positions.")}</div><p style="margin-top:12px"><button class="btn ghost" data-pm="${o.aiAct}" data-i="${o.i}" ${o.aiBusy?"disabled":""}>${o.aiBusy?"⏳ "+T("Menyusun laporan...","Writing report..."):"🧑‍⚖️ "+T("Laporan Wasit AI (Cloud, hanya kirim angka JSON)","AI Judge Report (Cloud, sends JSON numbers only)")}</button></p>${o.aiErr?`<span class="pill warn">${esc(o.aiErr)}</span>`:""}${ai}</div>`;
+    return `<div class="sec"><h2>📊 ${esc(o.title)} <span class="pill">${T("Keyakinan","Confidence")}: ${esc(rep.conf)}</span></h2><div class="kpis" style="margin:12px 0;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(rep.total,"Total",10)}${kp(rep.accuracy,"Accuracy",4)}${kp(rep.presentation,"Presentation",6)}</div><div class="kpis" style="margin:0 0 12px;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kp(p.speedPower,"Speed & Power",2)}${kp(p.rhythmTempo,"Rhythm & Tempo",2)}${kp(p.expression,"Expression",2)}</div><p class="mu" style="margin:0 0 10px;font-size:13px">🗣️ Kihap: ${pmKihapLine(rep.kihap)}</p><h3 style="margin:14px 0 6px">${T("Log Kesalahan per Timestamp","Error Log by Timestamp")}</h3><div style="overflow-x:auto"><table style="width:100%;font-size:13.5px"><thead><tr><th align="left">${T("Waktu","Time")}</th><th align="left">${T("Gerakan","Move")}</th><th align="left">${T("Kesalahan biomekanik","Biomechanical error")}</th><th align="left">${T("Poin","Pts")}</th></tr></thead><tbody>${rows}</tbody></table></div><p class="mu" style="font-size:12.5px;margin:6px 0 0">${T("Potongan resmi WT yang bisa dideteksi dari video: Kihap kurang/salah momen dan berhenti 3 dtk atau lebih. “obs.” = catatan biomekanik perkiraan tanpa potongan, karena WT tidak menetapkan angka sudut atau jarak. Kesalahan kuda-kuda dan gerakan tangan menurut pedoman resmi hanya bisa dinilai wasit.","Official WT deductions detectable from video: missing/mistimed Kihap and stopping for 3 seconds or more. “obs.” = estimated biomechanical notes without deduction, because WT sets no angle or distance numbers. Stance and hand-movement mistakes per the official guidelines can only be judged by a referee.")}</p><h3 style="margin:16px 0 4px">${T("3 Drill Korektif Prioritas","Top 3 Corrective Drills")}</h3>${dr}<div class="note" style="margin-top:10px">${T("Ini estimasi otomatis dari pose tubuh, bukan penilaian resmi. Urutan gerakan tidak diverifikasi, dan Ambang sudut, jeda, dan goyang adalah perkiraan internal, belum dikalibrasi ke standar WT. Kihap dideteksi dari lonjakan suara pendek di audio video. Arah pandangan hanya perkiraan dari posisi hidung dan telinga.","This is an automatic estimate from body pose, not an official score. Move order is not verified, and Angle, pause and sway thresholds are internal estimates, not calibrated to WT standards. Kihap is detected from short loud bursts in the video audio. Gaze is only estimated from nose and ear positions.")}</div><p style="margin-top:12px"><button class="btn ghost" data-pm="${o.aiAct}" data-i="${o.i}" ${o.aiBusy?"disabled":""}>${o.aiBusy?"⏳ "+T("Menyusun laporan...","Writing report..."):"🧑‍⚖️ "+T("Laporan Wasit AI (Cloud, hanya kirim angka JSON)","AI Judge Report (Cloud, sends JSON numbers only)")}</button></p>${o.aiErr?`<span class="pill warn">${esc(o.aiErr)}</span>`:""}${ai}</div>`;
   }
   const pmToFive=t=>Math.max(1,Math.min(5,Math.round(t/2)));
   async function pmSaveEval(items){
@@ -2825,7 +2835,7 @@ ${JSON.stringify(tel)}`;
     return `<p class="mu" style="margin:0 0 8px;font-size:13px">${T("Ketuk kotak orang yang ingin dianalisa, lalu isi namanya. Orang yang tidak diketuk tidak dianalisa.","Tap the box of each person to analyze, then fill in their name. People you don't tap are skipped.")}</p>${free?"":`<input id="anaFind" type="search" value="${esc(anaState.q)}" placeholder="🔎 ${T("Cari nama murid...","Search student name...")}" style="margin-bottom:8px">`}<div style="position:relative;display:inline-block;max-width:100%;line-height:0"><img src="${pv.url}" alt="" style="max-width:100%;max-height:420px;border-radius:10px;display:block">${marks}</div>${pv.people.length?"":`<p class="mu" style="margin-top:8px">${T("Tidak ada orang terdeteksi di titik ini. Geser penggeser ke saat seluruh badan terlihat.","No one detected here. Slide to a moment where the whole body is visible.")}</p>`}<div style="margin:10px 0"><label style="font-size:13px">${T("Titik di video","Point in video")}: ${Math.round(pv.t*100)}%</label><input type="range" id="anaT" min="0" max="100" value="${Math.round(pv.t*100)}" style="width:100%" ${anaState.busy?"disabled":""}></div>${rows||`<p class="mu" style="font-size:13px;margin:0">${T("Belum ada orang yang diketuk.","No one selected yet.")}</p>`}`;
   }
   const UX_HELP={
-    poomsae:["Poomsae","Menilai jurus dengan standar World Taekwondo: Accuracy (4.00) + Presentation (6.00), termasuk Kihap.","Scores the form by World Taekwondo standard: Accuracy (4.00) + Presentation (6.00), including Kihap."],
+    poomsae:["Poomsae","Menilai jurus dengan aturan World Taekwondo (Pasal 16): Accuracy 4.00 (potongan resmi: Kihap dan berhenti ≥3 dtk yang bisa dideteksi) + Presentation 6.00 (nilai keseluruhan: Speed & Power, Rhythm & Tempo, Expression of Energy).","Scores the form by World Taekwondo rules (Art. 16): Accuracy 4.00 (official deductions detectable: Kihap and stops of 3 s or more) + Presentation 6.00 (overall: Speed & Power, Rhythm & Tempo, Expression of Energy)."],
     kyorugi:["Kyorugi","Mengukur posisi guard, jumlah dan tinggi tendangan saat sparring.","Measures guard position, kick count and kick height in sparring."],
     umum:["Latihan umum","Mengukur tinggi tendangan (Kelenturan) dan kedalaman kuda-kuda (Kekuatan).","Measures kick height (Flexibility) and stance depth (Strength)."]
   };
@@ -2833,7 +2843,8 @@ ${JSON.stringify(tel)}`;
     const orig=__anaOrig();
     if(orig.indexOf('id="anaMode"')<0)return orig;
     const pool=anaPool(),st=pool.find(x=>x.id===anaState.stu)||pool[0];if(st)anaState.stu=st.id;
-    const mode=anaState.mode,free=pmState.free,owner=ROLE==="owner",multi=uxMulti(),isP=mode==="poomsae";
+    const mode=anaState.mode,free=pmState.free,owner=ROLE==="owner",multi=uxMulti(),isP=mode==="poomsae",live=isP&&pmState.source==="live";
+    if(!live&&(liveState.active||liveState.starting))setTimeout(liveOff,0);
     const mark='<div class="sec"><h2>✓',ix=orig.indexOf(mark),origRes=ix>=0?orig.slice(ix):"";
     const busy=pmState.busy||anaState.busy,msg=pmState.busy?pmState.msg:anaState.msg,err=pmState.err||anaState.err;
     const nsel=free?anaState.sel.length:anaCount();
@@ -2841,16 +2852,215 @@ ${JSON.stringify(tel)}`;
     const kat=pmState.kat||(!free&&st&&st.b)||"";
     const intro=`<div class="top"><div><h1>${T("Analisa Video","Video Analysis")}</h1><span class="mu">${T("Unggah video, pilih jenis analisa, lalu klik Analisa Sekarang. Video diproses di perangkat ini dan tidak diunggah.","Upload a video, choose the analysis type, then click Analyze Now. The video is processed on this device and not uploaded.")} · ${esc(unitLabel())}</span></div></div>`;
     const c1=`<div class="sec"><h2>① ${T("Video","Video")}</h2><input id="anaFile" type="file" accept="video/*">${anaState.file?`<p class="mu" style="margin:6px 0 0;font-size:13px">🎞️ ${esc(anaState.file.name)}</p>`:`<p class="mu" style="margin:6px 0 0;font-size:13px">${T("Tips: kamera diam, seluruh badan terlihat, 10–30 detik. Untuk Kihap, rekam dengan suara.","Tips: steady camera, full body visible, 10–30 seconds. Record with sound for Kihap.")}</p>`}</div>`;
-    const c2=`<div class="sec"><h2>② ${T("Jenis analisa","Analysis type")}</h2><div class="f" style="grid-template-columns:1fr"><div><label>${T("Jenis video","Video type")}</label><select id="anaMode">${[["poomsae","Poomsae"],["kyorugi","Kyorugi (sparring)"],["umum",T("Latihan umum","General training")]].map(m=>`<option value="${m[0]}" ${mode===m[0]?"selected":""}>${m[1]}</option>`).join("")}</select></div><div><label>${T("Hasil dipakai untuk","Result is used for")}</label><select id="pmTarget"><option value="student" ${!free?"selected":""}>${T("Murid → masuk Penilaian","Student → saved to Evaluations")}</option><option value="free" ${free?"selected":""}>${T("Analisa bebas (tidak disimpan)","Free analysis (not saved)")}</option></select></div>${owner?`<div><label>${T("Jumlah orang di video","People in the video")}</label><select id="uxPeople"><option value="one" ${!multi?"selected":""}>${T("Satu orang","One person")}</option><option value="multi" ${multi?"selected":""}>${T("Beberapa orang (ketuk di video)","Several people (tap in the video)")}</option></select></div>`:""}</div><p class="mu" style="margin:10px 0 0;font-size:13px">${isEN()?h[2]:h[1]}</p></div>`;
+    const c2=`<div class="sec"><h2>② ${T("Jenis analisa","Analysis type")}</h2><div class="f" style="grid-template-columns:1fr"><div><label>${T("Jenis video","Video type")}</label><select id="anaMode">${[["poomsae","Poomsae"],["kyorugi","Kyorugi (sparring)"],["umum",T("Latihan umum","General training")]].map(m=>`<option value="${m[0]}" ${mode===m[0]?"selected":""}>${m[1]}</option>`).join("")}</select></div><div><label>${T("Hasil dipakai untuk","Result is used for")}</label><select id="pmTarget"><option value="student" ${!free?"selected":""}>${T("Murid → masuk Penilaian","Student → saved to Evaluations")}</option><option value="free" ${free?"selected":""}>${T("Analisa bebas (tidak disimpan)","Free analysis (not saved)")}</option></select></div>${isP?`<div><label>${T("Sumber","Source")}</label><select id="uxSource"><option value="upload" ${!live?"selected":""}>${T("Unggah video","Upload video")}</option><option value="live" ${live?"selected":""}>${T("Kamera live (landscape, beberapa orang)","Live camera (landscape, several people)")}</option></select></div>`:""}${owner&&!live?`<div><label>${T("Jumlah orang di video","People in the video")}</label><select id="uxPeople"><option value="one" ${!multi?"selected":""}>${T("Satu orang","One person")}</option><option value="multi" ${multi?"selected":""}>${T("Beberapa orang (ketuk di video)","Several people (tap in the video)")}</option></select></div>`:""}</div><p class="mu" style="margin:10px 0 0;font-size:13px">${isEN()?h[2]:h[1]}</p></div>`;
     const who=multi?uxPickHtml():(free?`<div class="f" style="grid-template-columns:1fr"><div><label>${T("Nama peserta (opsional)","Participant name (optional)")}</label><input id="pmFname" value="${esc(pmState.fname)}" maxlength="40" placeholder="${T("mis. nama sendiri","e.g. your own name")}"></div></div>`:`<div><label>${T("Murid","Student")}</label>${anaStuHtml(st)}</div>`);
     const c3=`<div class="sec"><h2>③ ${T("Peserta","Participant")}</h2>${who}</div>`;
-    const pset=isP?`<div class="f" style="grid-template-columns:1fr"><div><label>${T("Nama jurus","Poomsae name")}</label><select id="pmJurus">${PM_JURUS.map(j=>`<option ${pmState.jurus===j?"selected":""}>${j}</option>`).join("")}</select></div><div><label>${T("Kategori / sabuk","Category / belt")}</label><input id="pmKat" value="${esc(kat)}" placeholder="${T("mis. Cadet, Sabuk Hijau","e.g. Cadet, Green Belt")}"></div><div><label>${T("Konteks","Context")}</label><select id="pmCtx"><option value="UKT" ${pmState.ctx==="UKT"?"selected":""}>UKT</option><option value="Simulasi Kejuaraan" ${pmState.ctx!=="UKT"?"selected":""}>${T("Simulasi Kejuaraan","Championship simulation")}</option></select></div><div><label>${T("Gerakan lambat wajib?","Mandatory slow motion?")}</label><select id="pmSlow"><option value="" ${pmState.slow===""?"selected":""}>${T("Tidak diketahui (aturan durasi tidak dipakai)","Unknown (duration rule not applied)")}</option><option value="1" ${pmState.slow==="1"?"selected":""}>${T("Ya (Taegeuk 5–8 / Sabuk Hitam)","Yes (Taegeuk 5–8 / Black Belt)")}</option><option value="0" ${pmState.slow==="0"?"selected":""}>${T("Tidak (tempo normal)","No (normal tempo)")}</option></select></div></div><div class="f" style="grid-template-columns:1fr;margin-top:10px"><div><label>🗣️ ${T("Kihap resmi jurus ini","Official Kihap for this form")}</label><div class="note" style="margin:0">${PM_KIHAP[pmState.jurus]?esc(pmKihapInfo(pmState.jurus))+" · "+T("Kihap tidak ada atau salah momen = kesalahan mayor (−0.3).","missing or mistimed Kihap = major mistake (−0.3)."):T("Tidak ada ketentuan Kihap resmi untuk jurus ini (bukan poomsae WT), Kihap tidak dinilai.","No official Kihap rule for this form (not a WT poomsae), Kihap is not scored.")}</div></div><div><label>🗣️ ${T("Kihap terdengar? (koreksi manual)","Kihap heard? (manual override)")}</label><select id="pmKihapM"><option value="" ${pmState.kihapManual===""?"selected":""}>${T("Otomatis dari suara video","Automatic from video sound")}</option><option value="1" ${pmState.kihapManual==="1"?"selected":""}>${T("Ya, terdengar","Yes, heard")}</option><option value="0" ${pmState.kihapManual==="0"?"selected":""}>${T("Tidak ada Kihap","No Kihap")}</option></select></div></div><p class="mu" style="margin:8px 0 0;font-size:12.5px">${T("Jumlah dan titik Kihap mengikuti tabel resmi per jurus (otomatis). Kihap dibaca dari audio video. Kalau suara tidak terbaca (video senyap atau terlalu ramai), pilih koreksi manual lalu klik Analisa lagi; hasil dihitung ulang dengan cepat.","Kihap count and positions follow the official per-form table (automatic). Kihap is read from the video audio. If the sound is not readable (silent or noisy), choose the manual override and click Analyze again; results are recomputed quickly.")}</p>`:(!free&&!multi?`<div class="f" style="grid-template-columns:1fr"><div><label>${T("Mesin analisa","Analysis engine")}</label><select id="anaEngine"><option value="device" ${anaState.engine!=="cloud"?"selected":""}>${T("Di perangkat ini (gratis, paling privat)","On this device (free, most private)")}</option><option value="cloud" ${anaState.engine==="cloud"?"selected":""}>${T("AI Cloud (cadangan, kirim gambar kecil)","AI Cloud (backup, sends small frames)")}</option></select></div></div>`:"");
+    const pset=isP?`<div class="f" style="grid-template-columns:1fr"><div><label>${T("Nama jurus","Poomsae name")}</label><select id="pmJurus">${PM_JURUS.map(j=>`<option ${pmState.jurus===j?"selected":""}>${j}</option>`).join("")}</select></div><div><label>${T("Kategori / sabuk","Category / belt")}</label><input id="pmKat" value="${esc(kat)}" placeholder="${T("mis. Cadet, Sabuk Hijau","e.g. Cadet, Green Belt")}"></div><div><label>${T("Konteks","Context")}</label><select id="pmCtx"><option value="UKT" ${pmState.ctx==="UKT"?"selected":""}>UKT</option><option value="Simulasi Kejuaraan" ${pmState.ctx!=="UKT"?"selected":""}>${T("Simulasi Kejuaraan","Championship simulation")}</option></select></div><div><label>${T("Ada gerakan lambat disengaja?","Intentional slow movements?")}</label><select id="pmSlow"><option value="" ${pmState.slow===""?"selected":""}>${T("Tidak diketahui (deteksi berhenti 3 dtk mati)","Unknown (3 s stop detection off)")}</option><option value="1" ${pmState.slow==="1"?"selected":""}>${T("Ya (mis. Taegeuk 6–8, sabuk hitam)","Yes (e.g. Taegeuk 6–8, black belt)")}</option><option value="0" ${pmState.slow==="0"?"selected":""}>${T("Tidak (deteksi berhenti 3 dtk aktif)","No (3 s stop detection on)")}</option></select></div></div><div class="f" style="grid-template-columns:1fr;margin-top:10px"><div><label>🗣️ ${T("Kihap resmi jurus ini","Official Kihap for this form")}</label><div class="note" style="margin:0">${PM_KIHAP[pmState.jurus]?esc(pmKihapInfo(pmState.jurus))+" · "+T("Kihap tidak ada atau salah momen = kesalahan mayor (−0.3).","missing or mistimed Kihap = major mistake (−0.3)."):T("Tidak ada ketentuan Kihap resmi untuk jurus ini (bukan poomsae WT), Kihap tidak dinilai.","No official Kihap rule for this form (not a WT poomsae), Kihap is not scored.")}</div></div><div><label>🗣️ ${T("Kihap terdengar? (koreksi manual)","Kihap heard? (manual override)")}</label><select id="pmKihapM"><option value="" ${pmState.kihapManual===""?"selected":""}>${T("Otomatis dari suara video","Automatic from video sound")}</option><option value="1" ${pmState.kihapManual==="1"?"selected":""}>${T("Ya, terdengar","Yes, heard")}</option><option value="0" ${pmState.kihapManual==="0"?"selected":""}>${T("Tidak ada Kihap","No Kihap")}</option></select></div></div><p class="mu" style="margin:8px 0 0;font-size:12.5px">${T("Rentang nilai Presentation untuk UKT dan Simulasi Kejuaraan adalah kalibrasi pelatih, bukan aturan WT. ","Presentation ranges for UKT and Championship simulation are coach calibration, not WT rules. ")}${T("Jumlah dan titik Kihap mengikuti tabel resmi per jurus (otomatis). Kihap dibaca dari audio video. Kalau suara tidak terbaca (video senyap atau terlalu ramai), pilih koreksi manual lalu klik Analisa lagi; hasil dihitung ulang dengan cepat.","Kihap count and positions follow the official per-form table (automatic). Kihap is read from the video audio. If the sound is not readable (silent or noisy), choose the manual override and click Analyze again; results are recomputed quickly.")}</p>`:(!free&&!multi?`<div class="f" style="grid-template-columns:1fr"><div><label>${T("Mesin analisa","Analysis engine")}</label><select id="anaEngine"><option value="device" ${anaState.engine!=="cloud"?"selected":""}>${T("Di perangkat ini (gratis, paling privat)","On this device (free, most private)")}</option><option value="cloud" ${anaState.engine==="cloud"?"selected":""}>${T("AI Cloud (cadangan, kirim gambar kecil)","AI Cloud (backup, sends small frames)")}</option></select></div></div>`:"");
     const c4=pset?`<div class="sec"><h2>④ ${isP?T("Pengaturan Poomsae","Poomsae settings"):T("Lanjutan","Advanced")}</h2>${pset}</div>`:"";
     const lbl=busy?"⏳ "+esc(msg):multi?"🎥 "+T("Analisa ","Analyze ")+nsel+" "+T("orang","people"):"🎥 "+T("Analisa Sekarang","Analyze Now");
     const go=`<div class="sec"><button class="btn" data-pm="go" ${busy||(multi&&!nsel)?"disabled":""}>${lbl}</button>${busy&&anaState.busy?` <button class="btn ghost dn" data-a="anaCancel">${T("Batal","Cancel")}</button>`:""}${multi&&!nsel&&!busy?`<p class="mu" style="margin:8px 0 0;font-size:13px">${T("Ketuk orang di gambar dulu.","Tap people in the image first.")}</p>`:""}${err?`<p style="margin:10px 0 0"><span class="pill warn">${esc(err)}</span></p>`:""}</div>`;
     const res=isP?pmResultsHtml():(free?fkHtml():origRes+(multi?"":"")+anaMultiHtml());
+    if(live)return need()+intro+liveCardHtml()+c2+c4+(pmState.err?`<div class="sec"><span class="pill warn">${esc(pmState.err)}</span></div>`:"")+res;
     return need()+intro+c1+c2+c3+c4+go+res;
   };
+  // ===== PENILAIAN LIVE: kamera (landscape), beberapa orang, mikrofon untuk Kihap =====
+  Object.assign(pmState,{source:"upload"});
+  const liveState={active:false,starting:false,rec:false,stream:null,video:null,cv:null,wrap:null,lm:null,tracks:[],nextId:1,sel:{},bursts:[],t0:0,msg:"",err:"",hasMic:false,mic:{ring:[],on:false,start:0,last:0,pk:0,peak:0},loopT:0,micT:0,ac:null,an:null,buf:null,wake:null,offCount:0};
+  const LIVE_SKEL=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
+  const liveEl=id=>document.getElementById(id);
+  function liveAttach(){const L=liveState;if(!L.active||!L.wrap)return;const h=liveEl("liveHost");if(h&&L.wrap.parentNode!==h){h.appendChild(L.wrap);try{L.video.play()}catch(e){}}}
+  new MutationObserver(()=>{if(liveState.active&&liveState.wrap&&!liveState.wrap.isConnected)liveAttach()}).observe(document.body,{childList:true,subtree:true});
+  async function liveOn(){
+    const L=liveState;if(L.active||L.starting)return;
+    L.starting=true;L.err="";L.msg=T("Meminta izin kamera...","Requesting camera permission...");pmReset();draw();
+    const say=m=>{L.msg=m;const e=liveEl("liveMsg");if(e)e.textContent=m};
+    try{
+      if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error(T("Kamera tidak didukung di browser ini. Buka lewat Safari/Chrome terbaru dengan HTTPS.","Camera is not supported in this browser. Use a recent Safari/Chrome over HTTPS."));
+      const vc={facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}};
+      let stream;
+      try{stream=await navigator.mediaDevices.getUserMedia({video:vc,audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})}
+      catch(e1){
+        try{stream=await navigator.mediaDevices.getUserMedia({video:vc,audio:false})}
+        catch(e2){throw new Error((e2&&(e2.name==="NotAllowedError"||e2.name==="SecurityError"))?T("Izin kamera ditolak. Aktifkan izin kamera untuk situs ini di pengaturan browser, lalu coba lagi.","Camera permission denied. Enable camera access for this site in browser settings, then try again."):T("Kamera tidak bisa dibuka: ","Cannot open the camera: ")+((e2&&e2.message)||e2))}
+      }
+      say(T("Memuat model deteksi gerakan...","Loading motion model..."));
+      const lm=await loadPose(say);
+      try{await lm.setOptions({numPoses:6})}catch(e){}
+      const v=document.createElement("video");v.muted=true;v.playsInline=true;v.autoplay=true;v.srcObject=stream;
+      await new Promise(res=>{if(v.readyState>=1)res();else v.onloadedmetadata=res});
+      try{await v.play()}catch(e){}
+      const cv=document.createElement("canvas");cv.width=v.videoWidth||1280;cv.height=v.videoHeight||720;
+      cv.style.cssText="position:absolute;left:0;top:0;width:100%;height:100%;touch-action:manipulation";
+      v.style.cssText="width:100%;display:block;max-height:70vh;background:#000";
+      const wrap=document.createElement("div");wrap.style.cssText="position:relative;max-width:100%;line-height:0;background:#000;border-radius:10px;overflow:hidden";
+      wrap.appendChild(v);wrap.appendChild(cv);
+      cv.addEventListener("click",ev=>{
+        if(L.rec)return;
+        const r=cv.getBoundingClientRect(),x=(ev.clientX-r.left)/r.width,y=(ev.clientY-r.top)/r.height;
+        const hit=L.tracks.filter(t=>t.seen&&x>=t.b.x&&x<=t.b.x+t.b.w&&y>=t.b.y&&y<=t.b.y+t.b.h).sort((a,b)=>a.b.w*a.b.h-b.b.w*b.b.h)[0];
+        if(!hit)return;
+        if(L.sel[hit.id])delete L.sel[hit.id];else L.sel[hit.id]={name:"",sid:""};
+        draw();
+      });
+      Object.assign(L,{stream,video:v,cv,wrap,lm,tracks:[],nextId:1,sel:{},bursts:[],rec:false});
+      L.hasMic=stream.getAudioTracks().length>0;
+      L.mic={ring:[],on:false,start:0,last:0,pk:0,peak:0};
+      if(L.hasMic){
+        try{
+          const AC=window.AudioContext||window.webkitAudioContext,ac=new AC();
+          try{await ac.resume()}catch(e){}
+          const src=ac.createMediaStreamSource(stream),hp=ac.createBiquadFilter(),lp=ac.createBiquadFilter(),an=ac.createAnalyser();
+          hp.type="highpass";hp.frequency.value=300;lp.type="lowpass";lp.frequency.value=3500;an.fftSize=1024;
+          src.connect(hp);hp.connect(lp);lp.connect(an);
+          L.ac=ac;L.an=an;L.buf=new Float32Array(an.fftSize);
+          L.micT=setInterval(liveMicTick,20);
+        }catch(e){L.hasMic=false}
+      }
+      try{if(navigator.wakeLock)L.wake=await navigator.wakeLock.request("screen")}catch(e){}
+      L.active=true;L.starting=false;L.msg="";
+      draw();liveAttach();liveLoop();
+    }catch(err){L.starting=false;L.msg="";L.err=err.message||String(err);liveOff();draw()}
+  }
+  function liveOff(){
+    const L=liveState;
+    clearTimeout(L.loopT);clearInterval(L.micT);
+    try{L.stream&&L.stream.getTracks().forEach(t=>t.stop())}catch(e){}
+    try{L.ac&&L.ac.close()}catch(e){}
+    try{L.wake&&L.wake.release()}catch(e){}
+    try{L.wrap&&L.wrap.remove()}catch(e){}
+    Object.assign(L,{active:false,starting:false,rec:false,stream:null,video:null,cv:null,wrap:null,tracks:[],sel:{},ac:null,an:null,wake:null});
+  }
+  function liveMicTick(){
+    const L=liveState,an=L.an;if(!an||!L.active)return;
+    an.getFloatTimeDomainData(L.buf);let s=0;for(let i=0;i<L.buf.length;i++)s+=L.buf[i]*L.buf[i];
+    const rms=Math.sqrt(s/L.buf.length),m=L.mic;
+    m.peak=Math.max(m.peak,rms);m.ring.push(rms);if(m.ring.length>150)m.ring.shift();
+    const floor=[...m.ring].sort((a,b)=>a-b)[Math.floor(m.ring.length/2)]||0,thr=Math.max(floor*5,0.02),now=performance.now()/1000;
+    if(rms>=thr){if(!m.on){m.on=true;m.start=now;m.pk=0}m.pk=Math.max(m.pk,rms);m.last=now}
+    else if(m.on&&now-m.last>0.06){
+      m.on=false;const dur=m.last-m.start+0.02;
+      if(L.rec&&dur>=0.06&&dur<=0.8)L.bursts.push({t:Math.round((m.start-L.t0)*100)/100,dur:Math.round(dur*100)/100,peak:Math.round(m.pk*1000)/1000});
+    }
+    const bar=liveEl("liveMic");if(bar)bar.style.width=Math.min(100,Math.round(rms/Math.max(thr,0.02)*50))+"%";
+    const kc=liveEl("liveKihap");if(kc)kc.textContent=L.bursts.length;
+  }
+  function liveTrackStep(dets){
+    const L=liveState,tr=L.tracks,pairs=[];
+    tr.forEach((t,ti)=>dets.forEach((d,di)=>{
+      const dist=Math.hypot(d.b.cx-t.b.cx,d.b.cy-t.b.cy)/Math.max(t.b.h,0.15),gate=0.9*(1+0.5*Math.min(t.miss,4));
+      if(dist>gate)return;const ratio=d.b.h/Math.max(t.href,0.01);if(ratio<0.6||ratio>1.6)return;pairs.push([dist,ti,di]);
+    }));
+    pairs.sort((a,b)=>a[0]-b[0]);const ut=new Set(),ud=new Set();
+    for(const [,ti,di] of pairs){if(ut.has(ti)||ud.has(di))continue;ut.add(ti);ud.add(di);const t=tr[ti],d=dets[di];t.pts=d.pts;t.b=d.b;t.href=0.85*t.href+0.15*d.b.h;t.miss=0;t.seen=true}
+    tr.forEach((t,ti)=>{if(!ut.has(ti)){t.miss++;t.seen=false;t.pts=null}});
+    dets.forEach((d,di)=>{if(ud.has(di)||tr.length>=12||d.b.h<0.12)return;tr.push({id:L.nextId++,b:d.b,href:d.b.h,miss:0,seen:true,pts:d.pts,fr:[],moveT:0,frozen:false})});
+    L.tracks=tr.filter(t=>t.miss<40||L.sel[t.id]);
+  }
+  function liveRecord(t){
+    const L=liveState;
+    Object.keys(L.sel).forEach(id=>{
+      const tr=L.tracks.find(x=>x.id===+id);if(!tr)return;
+      const prev=tr.fr.length?tr.fr[tr.fr.length-1]:null;
+      tr.fr.push({t,p:tr.seen?tr.pts:null});
+      if(!tr.moveT)tr.moveT=t;
+      if(prev&&prev.p&&tr.pts){
+        const sh={x:(tr.pts[11].x+tr.pts[12].x)/2,y:(tr.pts[11].y+tr.pts[12].y)/2},hp={x:(tr.pts[23].x+tr.pts[24].x)/2,y:(tr.pts[23].y+tr.pts[24].y)/2},tor=Math.hypot(sh.x-hp.x,sh.y-hp.y),dt=t-prev.t;
+        if(tor>8&&dt>0){let m=0;[15,16,27,28].forEach(i=>{if(tr.pts[i].v>0.5&&prev.p[i].v>0.5)m=Math.max(m,Math.hypot(tr.pts[i].x-prev.p[i].x,tr.pts[i].y-prev.p[i].y)/tor/dt)});if(m>0.5)tr.moveT=t}
+      }
+      tr.frozen=t-tr.moveT>=3&&t>3;
+    });
+  }
+  function liveDraw(w,h){
+    const L=liveState,cv=L.cv;if(!cv)return;
+    if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}
+    const ctx=cv.getContext("2d");ctx.clearRect(0,0,w,h);
+    const fs=Math.max(14,Math.round(w/50));ctx.font="700 "+fs+"px sans-serif";ctx.textBaseline="top";
+    L.tracks.forEach(t=>{
+      if(!t.seen)return;
+      const sel=L.sel[t.id],c=ANA_COL[(t.id-1)%ANA_COL.length],b=t.b;
+      ctx.lineWidth=sel?5:2;ctx.strokeStyle=c;ctx.setLineDash(sel?[]:[8,6]);ctx.strokeRect(b.x*w,b.y*h,b.w*w,b.h*h);ctx.setLineDash([]);
+      if(sel&&t.pts){ctx.lineWidth=3;LIVE_SKEL.forEach(([i,j])=>{const p=t.pts[i],q=t.pts[j];if(p.v>0.4&&q.v>0.4){ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke()}})}
+      const nm=sel?(pmState.free?(sel.name||""):((S.find(x=>x.id===sel.sid)||{})._n||"")):"";
+      const label=(sel?"✓ ":"")+"#"+t.id+(nm?" "+nm:"")+(L.rec&&sel&&t.frozen?"  ⏸ >3s":"");
+      const tw=ctx.measureText(label).width+12;
+      ctx.fillStyle=(L.rec&&sel&&t.frozen)?"#C8102E":c;ctx.fillRect(b.x*w,Math.max(0,b.y*h-fs-8),tw,fs+8);
+      ctx.fillStyle="#fff";ctx.fillText(label,b.x*w+6,Math.max(0,b.y*h-fs-8)+4);
+    });
+  }
+  async function liveLoop(){
+    const L=liveState;if(!L.active)return;
+    if(!L.wrap.isConnected){if(++L.offCount>30){liveOff();return}}else L.offCount=0;
+    const t00=performance.now();
+    try{
+      const v=L.video;
+      if(v&&v.readyState>=2&&v.videoWidth){
+        const w=v.videoWidth,h=v.videoHeight;
+        let r=null;try{r=L.lm.detect(v)}catch(e){}
+        const dets=((r&&r.landmarks)||[]).map(Lm=>{const b=poseBox(Lm);return b?{b,pts:Lm.map(p=>({x:p.x*w,y:p.y*h,v:p.visibility}))}:null}).filter(Boolean);
+        liveTrackStep(dets);
+        if(L.rec){
+          const t=performance.now()/1000-L.t0;liveRecord(t);
+          const tm=liveEl("liveTimer");if(tm)tm.textContent=String(Math.floor(t/60)).padStart(2,"0")+":"+String(Math.floor(t%60)).padStart(2,"0");
+          if(t>300)liveFinish();
+        }
+        liveDraw(w,h);
+        const sn=liveEl("liveSeen");if(sn)sn.textContent=L.tracks.filter(t=>t.seen).length;
+      }
+    }catch(e){}
+    if(L.active)L.loopT=setTimeout(liveLoop,Math.max(10,100-(performance.now()-t00)));
+  }
+  function liveRec(){
+    const L=liveState;if(!L.active||L.rec)return;
+    const ids=Object.keys(L.sel);
+    if(!ids.length)return toast(T("Ketuk orang di layar kamera dulu","Tap people on the camera view first"));
+    if(!pmState.free){
+      if(ids.some(id=>!L.sel[id].sid))return toast(T("Pilih murid untuk tiap orang, atau ganti ke Analisa bebas","Choose a student for each person, or switch to Free analysis"));
+      if(ids.some(id=>{const s=S.find(x=>x.id===L.sel[id].sid);return !s||!s.foto}))return toast(T("Ada murid tanpa izin foto/video","A student has no photo/video consent"));
+    }
+    pmReset();L.tracks.forEach(t=>{t.fr=[];t.moveT=0;t.frozen=false});L.bursts=[];L.t0=performance.now()/1000;L.rec=true;draw();
+  }
+  async function liveFinish(){
+    const L=liveState;if(!L.rec)return;
+    L.rec=false;
+    const dur=performance.now()/1000-L.t0;
+    const picks=Object.keys(L.sel).map(id=>({id:+id,tr:L.tracks.find(x=>x.id===+id),cfg:L.sel[id]})).filter(x=>x.tr);
+    if(dur<3||!picks.length){pmState.err=T("Rekaman terlalu pendek (minimal 3 detik) atau peserta hilang dari layar.","Recording too short (at least 3 seconds) or participants left the frame.");liveOff();draw();return}
+    const stubOf=p=>pmState.free?{id:"",_n:String(p.cfg.name||"").trim()||T("Orang #","Person #")+p.id,b:""}:S.find(x=>x.id===p.cfg.sid);
+    const first=picks.map(p=>{try{return pmTelemetry(p.tr.fr,dur,pmOpts(null)).peaksT}catch(e){return []}});
+    const audio=!L.hasMic?null:(!L.bursts.length&&L.mic.peak<0.005?{silent:true,bursts:[]}:{silent:false,bursts:L.bursts});
+    const aud=pmAttribute(audio,first);
+    pmState.multi=picks.map((p,i)=>{const st=stubOf(p);try{return {st,n:p.id,rep:pmTelemetry(p.tr.fr,dur,pmOpts(aud[i])),ai:"",aiBusy:false,aiErr:""}}catch(err){return {st,n:p.id,error:err.message||String(err)}}});
+    liveOff();
+    if(!pmState.free)await pmAutoSave(pmState.multi.filter(x=>x.rep&&x.st&&x.st.id).map(x=>({st:x.st,rep:x.rep})));
+    draw();
+  }
+  function liveCardHtml(){
+    const L=liveState,free=pmState.free,ids=Object.keys(L.sel),portrait=window.innerHeight>window.innerWidth;
+    let b=portrait?`<div class="note" style="margin-bottom:10px">📱 ${T("Putar HP ke landscape (mendatar) supaya semua peserta masuk layar. Taruh kamera diam, seluruh badan semua peserta terlihat.","Rotate your phone to landscape so everyone fits in the frame. Keep the camera still with every participant's full body visible.")}</div>`:"";
+    if(L.starting)b+=`<p class="mu" id="liveMsg" style="margin:0">${esc(L.msg||"...")}</p>`;
+    else if(!L.active){
+      if(pmState.multi||pmState.rep)b+=""; 
+      b+=`<p class="mu" style="margin:0 0 10px;font-size:13px">${T("Kamera menilai langsung beberapa peserta sekaligus. Video tidak direkam atau diunggah, hanya titik gerak tubuh dan suara Kihap dibaca di perangkat ini.","The camera scores several participants at once. Video is not recorded or uploaded; only body points and Kihap sound are read on this device.")}</p><button class="btn" data-pm="liveOn">📷 ${T("Nyalakan kamera","Turn on camera")}</button>`;
+    }else{
+      b+=`<div id="liveHost"></div>`;
+      b+=`<div style="margin:8px 0;height:6px;background:var(--ln);border-radius:4px;overflow:hidden"><div id="liveMic" style="height:100%;width:0;background:#1E7B4F"></div></div><p class="mu" style="margin:0 0 8px;font-size:12.5px">${L.hasMic?"🎤 "+T("level suara (Kihap dibaca dari sini)","sound level (Kihap is read from this)"):"⚠ "+T("Mikrofon tidak aktif: Kihap tidak terbaca, pakai koreksi manual di Pengaturan.","Microphone not active: Kihap not readable, use the manual override in Settings.")} · 👥 <span id="liveSeen">0</span> ${T("terdeteksi","detected")}${L.rec?` · ⏺ <b id="liveTimer">00:00</b> · 🗣️ <b id="liveKihap">0</b> Kihap`:""}</p>`;
+      b+=L.rec?"":`<p class="mu" style="margin:0 0 8px;font-size:13px">${T("Ketuk kotak orang di layar kamera untuk memilih peserta, lalu isi namanya.","Tap the box of each person on the camera view to choose participants, then fill in their names.")}</p>`;
+      b+=ids.map(id=>{const c=ANA_COL[(id-1)%ANA_COL.length],cfg=L.sel[id];return `<div class="row" style="gap:8px;flex-wrap:wrap"><span style="display:flex;align-items:center;gap:8px;flex:1;min-width:220px"><b style="color:${c}">#${id}</b>${free?`<input data-livename="${id}" value="${esc(cfg.name||"")}" maxlength="40" placeholder="${T("Nama peserta (bebas diisi)","Participant name (free text)")}" style="flex:1" ${L.rec?"disabled":""}>`:`<select data-livesel="${id}" style="flex:1" ${L.rec?"disabled":""}><option value="">— ${T("pilih murid","choose student")} —</option>${anaOptsHtml(cfg.sid||"")}</select>`}</span>${L.rec?"":`<button type="button" class="btn ghost dn" data-pm="liveRm" data-id="${id}">✕</button>`}</div>`}).join("");
+      b+=`<p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap">${L.rec?`<button class="btn dn" data-pm="liveFin">⏹ ${T("Selesai & nilai","Finish & score")}</button>`:`<button class="btn" data-pm="liveRec" ${ids.length?"":"disabled"}>⏺ ${T("Mulai rekam","Start")} ${ids.length?"("+ids.length+" "+T("orang","people")+")":""}</button><button class="btn ghost" data-pm="liveOff">${T("Matikan kamera","Turn off camera")}</button>`}</p>`;
+    }
+    if(L.err)b+=`<p style="margin:10px 0 0"><span class="pill warn">${esc(L.err)}</span></p>`;
+    return `<div class="sec"><h2>① ${T("Kamera live","Live camera")}</h2>${b}</div>`;
+  }
+  document.addEventListener("input",e=>{const t=e.target;if(t.dataset&&t.dataset.livename!==undefined){const x=liveState.sel[t.dataset.livename];if(x)x.name=t.value.slice(0,40)}});
+  document.addEventListener("change",e=>{
+    const t=e.target;
+    if(t.id==="uxSource"){pmState.source=t.value;liveOff();pmReset();draw();return;}
+    if(t.dataset&&t.dataset.livesel!==undefined){
+      const x=liveState.sel[t.dataset.livesel];if(!x)return;
+      if(t.value&&Object.keys(liveState.sel).some(id=>id!==t.dataset.livesel&&liveState.sel[id].sid===t.value)){toast(T("Murid itu sudah dipilih untuk orang lain","That student is already assigned to someone else"));t.value=x.sid||"";return;}
+      x.sid=t.value;
+    }
+  });
   function pmResultsHtml(){
     const rep=pmState.rep,multi=pmState.multi;let out="";
     if(rep)out+=pmResultHtml(rep,{title:(pmState.free&&pmState.repName?pmState.repName+" · ":"")+pmState.jurus,ai:pmState.ai,aiBusy:pmState.aiBusy,aiErr:pmState.aiErr,aiAct:"ai",i:""})+`<p style="margin:6px 0 0"><button class="btn ghost" data-pm="copy">📋 ${T("Salin prompt + JSON untuk AI","Copy prompt + JSON for AI")}</button></p>`;
@@ -2882,6 +3092,11 @@ ${JSON.stringify(tel)}`;
     const b=e.target.closest("[data-pm]");if(!b)return;
     e.stopImmediatePropagation();e.preventDefault();
     const a=b.dataset.pm,st=S.find(x=>x.id===anaState.stu),kat=pmState.kat||(st&&st.b)||"";
+    if(a==="liveOn")return liveOn();
+    if(a==="liveOff"){liveOff();pmState.err="";liveState.err="";return draw();}
+    if(a==="liveRec")return liveRec();
+    if(a==="liveFin")return liveFinish();
+    if(a==="liveRm"){delete liveState.sel[b.dataset.id];return draw();}
     if(a==="go")return uxGo();
     if(a==="reload"){anaState.pickOn=true;anaState.sel=[];anaState.multi=null;return anaPreview(anaState.prevT);}
     if(a==="undo"){
