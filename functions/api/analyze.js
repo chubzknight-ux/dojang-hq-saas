@@ -114,26 +114,27 @@ DATA JURUS:
 - Konteks: ${body.konteks==="Simulasi Kejuaraan"?"Simulasi Kejuaraan":"UKT"}
 
 TUGAS ANDA:
-1. Analisa seluruh log penyimpangan sudut sendi, durasi tempo, dan stabilitas keseimbangan yang tercatat pada data JSON di bawah.
-2. Konversikan setiap penyimpangan menjadi penilaian resmi World Taekwondo (WT):
-   - Accuracy (Maks 4.00): Kurangi -0.1 untuk penyimpangan sudut ringan (minor) dan -0.3 untuk kesalahan urutan, keseimbangan goyang berat, atau durasi gerakan lambat di luar standar ${dr[0]}–${dr[1]} detik (major, hanya jika is_slow_motion: true).
-   - Presentation (Maks 6.00): Nilai Speed & Power (0–2.00), Rhythm & Tempo (0–2.00), dan Expression of Energy (0–2.00) berdasarkan data kecepatan puncak (peak velocity), konsistensi jeda antar gerakan, dan stabilitas postur.
-3. Buat tabel Log Kesalahan per Timestamp berisi: Timestamp, Urutan Gerakan, Kesalahan Biomekanik Spesifik (sebutkan angka sudut/penyimpangannya), dan Potongan Poin.
+1. Analisa seluruh log (jenis, tingkat, potongan, timestamp), ringkasan, dan parameter pada data JSON di bawah.
+2. Nilai menurut aturan World Taekwondo (Poomsae Competition Rules and Interpretation, Pasal 16):
+   - Accuracy (basis 4.00): -0.1 untuk setiap kesalahan kecil pada gerakan (kuda-kuda atau gerakan tangan menyimpang dari pedoman penilaian); -0.3 untuk setiap kesalahan besar (gerakan salah atau tidak ada di pedoman, Kihap tidak dibuat atau salah momen, berhenti sementara 3 detik atau lebih, pandangan tidak mengikuti arah gerakan, kaki yang terangkat menyentuh lantai pada Hakdari-seogi, Jireugi tanpa tenaga dan suara, napas terlalu keras); -0.6 jika poomsae diulang dari awal.
+   - Presentation (basis 6.00): TIDAK dipotong per kesalahan, dinilai dari keseluruhan penampilan: Speed & Power (0-2.00), Rhythm & Tempo (0-2.00; kontrol kekuatan, kecepatan, dan ritme; kecepatan, tenaga, dan ritme yang seragam dari awal sampai akhir dikurangi), Expression of Energy (0-2.00; ukuran gerakan, konsentrasi, pandangan, Kihap, sikap, percaya diri).
+3. Buat tabel Log Kesalahan per Timestamp berisi: Timestamp, Urutan Gerakan, Kesalahan (sebutkan angka dari data), dan Potongan Poin.
 4. Susun 3 Program Drill Korektif paling prioritas (Nama Drill, Target Otot/Sendi, Langkah Eksekusi, dan Set/Repetisi) untuk memperbaiki kesalahan terbesar pada data tersebut.
 
 PARAMETER TAMBAHAN (OPSIONAL DI JSON):
 - head_yaw_aligned: Boolean, apakah arah hadap wajah/pandangan mata (gaze) mengarah tepat ke sasaran sebelum gerakan dikunci.
-- kihap_detected: Boolean, terdeteksi puncak suara Kihap pada step wajib.
-- is_slow_motion: Boolean, penanda apakah step tersebut memang gerakan lambat wajib (misal pada Taegeuk 5–8 / Poomsae Sabuk Hitam).
+- kihap_detected: Boolean, apakah Kihap terbaca sesuai jumlah wajib jurus tersebut.
+- is_slow_motion: Boolean; true jika ada gerakan lambat yang disengaja (misal Taegeuk 6-8 atau poomsae sabuk hitam), maka deteksi berhenti 3 detik dinonaktifkan.
 
-ATURAN GUARDRAIL TAMBAHAN:
+ATURAN GUARDRAIL:
 1. Null-Safe (Anti-Halusinasi): Jika ada parameter yang bernilai null atau tidak tercantum di JSON, ABAIKAN parameter tersebut. Jangan mengarang angka atau memberi potongan poin.
-2. Validasi Gerakan Lambat: Aturan durasi 5.0 – 8.0 detik HANYA berlaku jika is_slow_motion: true. Jangan terapkan aturan ini pada gerakan tempo normal.
-3. Penilaian Gaze & Kihap: Gunakan head_yaw_aligned dan kihap_detected (jika tersedia) sebagai dasar utama menilai sub-kriteria Expression of Energy (0.00 – 2.00).
-4. Jangkar Angka Presentation (wajib dipatuhi agar skor realistis):
-   - Jika Konteks = UKT: rentang normal total Presentation adalah 4.20 – 5.10 (tiap sub-kriteria di kisaran 1.40 – 1.70).
-   - Jika Konteks = Simulasi Kejuaraan: gunakan standar ketat di kisaran 3.60 – 4.70. Skor total Presentation di atas 4.80 HANYA boleh diberikan jika peak_velocity konsisten tinggi hingga step terakhir, hip_wobble hampir nol, dan head_yaw_aligned selalu true.
-5. Kihap (aturan WT): Kihap tidak dibuat atau salah momen adalah kesalahan mayor (-0.3) pada Accuracy, dan ikut menentukan Expression of Energy. Pakai kihap_wajib_jumlah dan kihap_wajib_gerakan dari JSON; jangan mengarang jumlah atau titik Kihap sendiri.
+2. Potongan resmi hanya berasal dari entri log bertingkat "major" atau "minor" yang potongannya bukan 0 (Kihap dan berhenti sementara). Entri bertingkat "observasi" (potongan 0) adalah catatan biomekanik perkiraan: WT tidak menetapkan angka sudut atau jarak, jadi jangan beri potongan dan jangan sebut itu kesalahan resmi; jadikan saran perbaikan. Kesalahan kuda-kuda dan gerakan tangan menurut pedoman resmi tidak bisa dinilai dari data ini karena nama dan urutan gerakan tidak tersedia.
+3. Durasi: jangan memberi potongan karena durasi klip. Angka 5-8 detik pada tabel referee hanya untuk gerakan lambat tertentu per gerakan, bukan seluruh klip.
+4. Penilaian Gaze & Kihap: gunakan head_yaw_aligned dan kihap_detected (jika tersedia) sebagai dasar utama menilai Expression of Energy (0.00 - 2.00).
+5. Jangkar angka Presentation (kalibrasi pelatih, bukan aturan WT; wajib dipatuhi agar skor realistis):
+   - Jika Konteks = UKT: rentang normal total Presentation adalah 4.20 - 5.10 (tiap sub-kriteria di kisaran 1.40 - 1.70).
+   - Jika Konteks = Simulasi Kejuaraan: gunakan standar ketat di kisaran 3.60 - 4.70. Skor total Presentation di atas 4.80 HANYA boleh diberikan jika peak_velocity konsisten tinggi hingga step terakhir, hip_wobble hampir nol, dan head_yaw_aligned selalu true.
+6. Kihap (aturan WT): Kihap tidak dibuat atau salah momen adalah kesalahan besar (-0.3) pada Accuracy dan ikut menentukan Expression of Energy. Pakai kihap_wajib_jumlah dan kihap_wajib_gerakan dari JSON; jangan mengarang jumlah atau titik Kihap sendiri.
 
 DATA TELEMETRI JSON LOKAL:
 ${JSON.stringify(tel)}
