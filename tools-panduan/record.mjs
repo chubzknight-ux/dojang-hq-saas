@@ -14,6 +14,8 @@ const D = { w: 1000, h: 640, dir: outDir + "/_tmp" };
 const M = { w: 390, h: 780, dir: outDir + "/_tmp", cs: "15px" };
 const S = {};
 const NAV = v => `nav button[data-v=${v}]`;
+// pindah menu lalu kembali ke atas halaman (menu kiri panjang bisa ikut menggulir halaman)
+const go = async (p, v, after = 900) => { await tap(p, NAV(v), { after: 250 }); await p.evaluate(() => scrollTo(0, 0)); await sleep(after); };
 
 // 1) Masuk & Dashboard
 S["01-masuk-dan-dashboard"] = async () => {
@@ -28,13 +30,16 @@ S["01-masuk-dan-dashboard"] = async () => {
   await tap(p, "#pinBtn", { after: 1800 });
   await p.waitForSelector(NAV("dash"));
   await cap(p, "Dashboard: jumlah murid, kehadiran terakhir, iuran bulan ini, dan jadwal kelas berikutnya", "LANGKAH 3", 3600);
+  await cap(p, "Titik hijau di kiri atas = data tersinkron. Kuning = sedang offline (absensi & iuran tetap aman, dikirim nanti)", null, 3800);
+  await cap(p, "Tombol “✅ Absen kelas ini” langsung membuka absensi untuk kelas hari ini", null, 3200);
+  await cap(p, "Kartu angka bisa diketuk, mis. “Iuran belum lunas” langsung membuka daftar yang belum bayar", null, 3600);
   await smoothScroll(p, 520, 1800);
-  await cap(p, "Gulir ke bawah untuk melihat sebaran sabuk dan murid yang siap diuji", null, 3000);
+  await cap(p, "Gulir ke bawah untuk melihat sebaran sabuk dan grafik kehadiran", null, 3000);
   await smoothScroll(p, -520, 1000);
-  await cap(p, "Punya beberapa cabang? Pilih unit di kiri atas untuk melihat data per cabang", "LANGKAH 4", 2200);
+  await cap(p, "Punya beberapa cabang? Pilih unit di kiri atas (di HP: di bar paling atas layar)", "LANGKAH 4", 2600);
   await p.selectOption("#unitSel", { label: /Cabang Timur/ }).catch(async () => { await p.selectOption("#unitSel", "Cabang Timur").catch(() => {}); });
   await sleep(1800);
-  await cap(p, "Menu di kiri (di HP: bar bawah) untuk pindah antar fitur. Selesai! 🎉", null, 3000);
+  await cap(p, "Menu di kiri dikelompokkan: Harian, Progres murid, Keuangan, Klub, Sistem. Di HP: bar bawah + “Lainnya”. Selesai! 🎉", null, 4200);
   return rc;
 };
 
@@ -43,7 +48,7 @@ S["02-murid-dan-absensi"] = async () => {
   const rc = await newRec(browser, { ...D, init: adminInit });
   const p = rc.page;
   await p.goto(base + "/"); await p.waitForSelector(NAV("mur")); await sleep(900);
-  await tap(p, NAV("mur"), { after: 900 });
+  await go(p, "mur", 900);
   await cap(p, "Menu Murid: daftar semua murid beserta sabuk dan unitnya", "MURID", 2600);
   await typeIn(p, "#fSearchInp", "alya"); await cap(p, "Cari murid dengan mengetik namanya", null, 1800);
   await p.fill("#fSearchInp", ""); await p.dispatchEvent("#fSearchInp", "input"); await sleep(500);
@@ -56,11 +61,16 @@ S["02-murid-dan-absensi"] = async () => {
   await typeIn(p, "#fw", "081234567890", { delay: 50 });
   await cap(p, "Nomor WhatsApp orang tua dipakai untuk menyalin pesan tagihan & laporan", null, 2600);
   await tap(p, "button[data-a=save]", { after: 1400 });
-  await cap(p, "Murid tersimpan. Tombol 🔗 Portal menyalin tautan untuk orang tua, 🏆 Champion untuk latihan PR", null, 3600);
-  await tap(p, NAV("abs"), { after: 900 });
-  await cap(p, "Menu Absensi: pilih tanggal, lalu centang murid yang hadir", "ABSENSI", 3000);
-  for (const i of [0, 1, 2, 4]) await tap(p, "input[data-ab]", { nth: i, after: 450 });
-  await cap(p, "Tersimpan otomatis. Tanpa sinyal pun aman: dikirim sendiri saat online kembali", null, 3400);
+  await cap(p, "Murid tersimpan. Ketuk nama murid untuk membuka laporannya", null, 3000);
+  await tap(p, "details.rmenu > summary", { after: 700 });
+  await cap(p, "Tombol ⋯ berisi: laporan, salin link Portal orang tua, link Champion (latihan PR), dan hapus", null, 4000);
+  await tap(p, "h1", { after: 500 });
+  await go(p, "abs", 900);
+  await cap(p, "Menu Absensi: pilih tanggal, lalu ketuk murid yang hadir (seluruh baris bisa diketuk)", "ABSENSI", 3400);
+  for (const i of [0, 1, 2, 4]) await tap(p, "label.row[data-srow]", { nth: i, after: 450 });
+  await cap(p, "Jumlah hadir terlihat di bar bawah. Tersimpan otomatis, tanpa sinyal pun aman", null, 3600);
+  await tap(p, ".segtabs button[data-val=rekap]", { after: 900 });
+  await cap(p, "Tab “Rekap bulanan”: kehadiran tiap murid sebulan penuh", null, 2800);
   await tap(p, "button[data-a=copyAttRep]", { after: 700 });
   await cap(p, "“Salin Ringkasan WA” membuat rekap kehadiran siap kirim ke grup", null, 2800);
   return rc;
@@ -71,20 +81,24 @@ S["03-iuran-pengumuman-ringkasan"] = async () => {
   const rc = await newRec(browser, { ...D, init: adminInit });
   const p = rc.page;
   await p.goto(base + "/"); await p.waitForSelector(NAV("iur")); await sleep(900);
-  await tap(p, NAV("iur"), { after: 900 });
+  await go(p, "iur", 900);
   await cap(p, "Menu Iuran: tabel pembayaran per murid per bulan", "IURAN", 2800);
   const cb = p.locator("#app input[type=checkbox]");
   for (const i of [0, 1, 3]) await tap(p, "#app input[type=checkbox]", { nth: i, after: 500 }).catch(() => {});
   await cap(p, "Centang murid yang sudah membayar. Tarif diatur per unit di menu Jadwal & Unit", null, 3400);
-  await tap(p, NAV("umum"), { after: 900 });
+  await tap(p, ".segtabs button[data-val=unpaid]", { after: 900 });
+  await cap(p, "Filter “Belum lunas” menampilkan yang belum bayar. Tombol “Ingatkan” menyiapkan pesan WhatsApp", null, 3800);
+  await tap(p, ".segtabs button[data-val=all]", { after: 500 });
+  await go(p, "umum", 900);
   await cap(p, "Menu Pengumuman: kabar untuk orang tua dan pelatih", "PENGUMUMAN", 2800);
   await typeIn(p, "#umJudul", "Libur latihan 25 Desember", { delay: 55 });
   await typeIn(p, "#app textarea", "Latihan libur Natal. Latihan lagi hari Sabtu 27 Desember pukul 08.00.", { delay: 35 });
   await p.fill("#umMulai", "2026-11-22"); await p.fill("#umSampai", "2026-12-31"); await sleep(700);
   await cap(p, "Atur tanggal tayang dan unit tujuan (semua unit atau satu unit)", null, 2600);
-  await tap(p, "button[data-a=umSave]", { after: 1400 });
+  await tap(p, "button[data-a=umSave]", { after: 900 });
+  await p.evaluate(() => scrollTo({ top: 0, behavior: "smooth" })); await sleep(900);
   await cap(p, "Pengumuman tampil di Dashboard dan Portal Orang Tua sesuai tanggal tayang", null, 3200);
-  await tap(p, NAV("rkp"), { after: 1000 });
+  await go(p, "rkp", 1000);
   await cap(p, "Ringkasan bulanan: murid baru, iuran masuk, kehadiran per unit, dan naik sabuk", "RINGKASAN", 3600);
   await tap(p, "button[data-a=rkpCopy]", { after: 700 });
   await cap(p, "Salin untuk WhatsApp atau unduh CSV. Hanya Admin yang melihatnya karena memuat iuran", null, 3200);
@@ -96,7 +110,7 @@ S["04-portal-orang-tua"] = async () => {
   const rc = await newRec(browser, { ...M });
   const p = rc.page;
   await p.goto(base + "/?portal=alya-putri" + (SAAS ? "&club=garuda" : "")); await p.waitForSelector("#pvName"); await sleep(600);
-  await cap(p, "Orang tua membuka tautan Portal yang dikirim dari menu Murid (🔗 Portal)", "PORTAL ORANG TUA", 3200);
+  await cap(p, "Orang tua membuka tautan Portal yang dikirim dari menu Murid (⋯ → Salin link Portal)", "PORTAL ORANG TUA", 3200);
   await typeIn(p, "#pvName", "Alya", { delay: 110 });
   await cap(p, "Demi keamanan, cukup ketik nama anak. Hanya sekali per HP", null, 2600);
   await tap(p, "#pvBtn", { after: 2200 });
@@ -139,8 +153,8 @@ S["06-akun-pelatih"] = async () => {
   const rc = await newRec(browser, { ...D, init: adminInit });
   const p = rc.page;
   await p.goto(base + "/"); await p.waitForSelector(NAV("pel")); await sleep(900);
-  await tap(p, NAV("pel"), { after: 1000 });
-  await cap(p, "Menu Pelatih: kelola profil pelatih dan akun login mereka", "AKUN PELATIH", 3000);
+  await go(p, "pel", 1000);
+  await cap(p, "Menu Pelatih punya 3 tab: Akun, Kinerja (evaluasi orang tua), dan Nilai internal", "AKUN PELATIH", 3400);
   await p.locator("#stfName").scrollIntoViewIfNeeded(); await sleep(700);
   await cap(p, "Buat akun: isi nama, nama pengguna, dan kata sandi (min. 8 karakter, huruf + angka)", null, 3400);
   await typeIn(p, "#stfName", "Sabeum Budi", { delay: 60 });
@@ -163,8 +177,29 @@ S["06-akun-pelatih"] = async () => {
   await typeIn(p, 'input[placeholder^="Kata sandi baru"]', "SabukHitam88", { delay: 60 });
   await tap(p, 'button:has-text("Simpan"):visible', { after: 1800 });
   await cap(p, "Pelatih hanya melihat murid di unitnya, tanpa nomor WA atau data iuran", null, 3800);
-  await tap(p, NAV("abs"), { after: 1000 });
+  await go(p, "abs", 1000);
   await cap(p, "Mengisi absensi dan penilaian sesuai izin yang diberikan. Selesai! 🎉", null, 3200);
+  return rc;
+};
+
+// 9) Penilaian kelas & laporan murid
+S["09-penilaian-dan-laporan"] = async () => {
+  const rc = await newRec(browser, { ...D, init: adminInit });
+  const p = rc.page;
+  await p.goto(base + "/"); await p.waitForSelector(NAV("pen")); await sleep(900);
+  await go(p, "pen", 1000);
+  await cap(p, "Menu Penilaian: pilih tanggal sesi dan nama pelatih penilai", "PENILAIAN", 3000);
+  await p.locator(".rate").first().scrollIntoViewIfNeeded(); await sleep(600);
+  await cap(p, "Nilai 5 aspek dengan sekali ketuk (1–5). Ketuk lagi angka yang sama untuk mengosongkan", null, 3600);
+  const picks = [[0, 4], [1, 3], [2, 4], [3, 5], [4, 5], [5, 3], [6, 4], [7, 4], [8, 3], [9, 5]];
+  for (const [g, v] of picks) await tap(p, `.rate >> nth=${g} >> button[data-segv="${v}"]`, { after: 250 });
+  await typeIn(p, "[data-en] >> nth=0", "Tendangan **makin tinggi**, jaga kuda-kuda", { delay: 35 });
+  await sleep(900);
+  await cap(p, "Tersimpan otomatis dan langsung masuk ke Grafik Keterampilan murid", null, 3400);
+  await go(p, "lap", 1200);
+  await cap(p, "Menu Laporan murid: progres sabuk, kehadiran, catatan pelatih, dan grafik keterampilan", "LAPORAN", 3800);
+  await smoothScroll(p, 600, 1800);
+  await cap(p, "Kirim laporan ke orang tua lewat WhatsApp atau salin link Portal. Selesai! 🎉", null, 3600);
   return rc;
 };
 
@@ -191,11 +226,13 @@ S["07-super-admin-klien-dan-pembayaran"] = async () => {
   await cap(p, "Atur paket dan tanggal masa aktif langganan", null, 2600);
   await tap(p, "button[data-a=saveClub]", { after: 1800 });
   await cap(p, "Klien tersimpan. Tombol +1 Bln / +1 Thn memperpanjang cepat, 📲 Tagih WA mengirim tautan bayar", null, 4200);
-  await tap(p, NAV("pay"), { after: 1200 });
+  await go(p, "pay", 1200);
   await cap(p, "Menu Pembayaran: atur paket, harga, dan rekening / QRIS tujuan transfer", "PEMBAYARAN", 3400);
   await tap(p, "button[data-bill=addplan]", { after: 500 });
-  await typeIn(p, "[data-plrow] [data-f=name]", "Starter", { nth: 0, delay: 60 }).catch(() => {});
-  await typeIn(p, "[data-plrow] [data-f=price]", "100000", { nth: 0, delay: 60 }).catch(() => {});
+  // paket baru ada di baris terakhir (paket bawaan Basic & Pro sudah ada di atasnya)
+  const nNew = Math.max(0, (await p.locator("[data-plrow]").count()) - 1);
+  await typeIn(p, "[data-plrow] [data-f=name]", "Starter", { nth: nNew, delay: 60 }).catch(() => {});
+  await typeIn(p, "[data-plrow] [data-f=price]", "100000", { nth: nNew, delay: 60 }).catch(() => {});
   await typeIn(p, "#bl_d12", "10", { delay: 80 });
   await typeIn(p, "#bl_bank", "BCA", { delay: 70 });
   await typeIn(p, "#bl_no", "1234567890", { delay: 50 });
@@ -203,7 +240,7 @@ S["07-super-admin-klien-dan-pembayaran"] = async () => {
   await cap(p, "Isi paket, diskon durasi, dan rekening. Klien belum bisa membayar sebelum ini diisi", null, 3600);
   await tap(p, "button[data-bill=save]", { after: 1500 });
   await makeClaimedInvoice(base, "garuda", "starter", 3);
-  await tap(p, NAV("sa"), { after: 600 }); await tap(p, NAV("pay"), { after: 1400 });
+  await go(p, "sa", 600); await go(p, "pay", 1400);
   await p.locator("text=Tagihan").first().scrollIntoViewIfNeeded().catch(() => {});
   await smoothScroll(p, 700, 1500);
   await cap(p, "Tagihan dari klien muncul di sini. Cocokkan nominal (termasuk 3 angka unik) dengan mutasi rekening", null, 4200);
@@ -220,7 +257,7 @@ S["08-langganan-bayar"] = async () => {
   const rc = await newRec(browser, { ...D, init: adminInit });
   const p = rc.page;
   await p.goto(base + "/"); await p.waitForSelector(NAV("lgn")); await sleep(900);
-  await tap(p, NAV("lgn"), { after: 1400 });
+  await go(p, "lgn", 1400);
   await cap(p, "Menu Langganan: lihat masa aktif dan perpanjang kapan saja", "LANGGANAN", 3200);
   await tap(p, "input[name=pay_plan][value=pro]", { after: 700 });
   await cap(p, "1. Pilih paket", null, 1800);
