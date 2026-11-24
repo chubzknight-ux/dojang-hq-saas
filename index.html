@@ -2190,6 +2190,88 @@ document.addEventListener("change",e=>{
   draw();
   const DCOL=["students","attendance","payments","leads","classes","evaluations","coach_evaluations","coaches","units","pengumuman"];
   const dlFile=async(name,text)=>{let dl=null;try{dl=window.claude?await claude.use("downloads"):null}catch(e){}if(dl){try{await dl.save({filename:name,data:text});return}catch(e){}}const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=name;document.body.appendChild(a);a.click();a.remove()};
+  // ==POSE-GUARD-START== (diuji oleh tests/pose-guard.test.js: blok ini tidak boleh memakai variabel dari luar)
+  // Penyaring "kerangka hantu": MediaPipe kadang menggambar pose di benda mati (botol, kursi, tas, tiang, bayangan).
+  // Lapis 1 plausible(): cek anatomi tiap frame. Lapis 2 poseConfirmer(): subjek baru sah setelah 8 frame berturut-turut lolos.
+  // Lapis 3 KIN/kinPt(): gerbang kinematik sebelum gerakan (tendangan, teknik poomsae) dihitung.
+  // Disesuaikan untuk Taekwondo (WT): kuda-kuda kyorugi menyamping dan putaran poomsae membuat bahu tampak sempit,
+  // tendangan samping/belakang (yeop/dwi chagi) membuat badan sangat miring, dan kamera boleh dari belakang badan.
+  const PG={
+    coreV:0.5,coreVBack:0.4,     // visibility bahu & pinggul (11,12,23,24)
+    meanV:0.6,meanVBack:0.5,     // rata-rata visibility titik utama (0, 11-16, 23-28; dari belakang tanpa hidung)
+    minTorsoH:0.06,              // torso minimal 6% tinggi frame
+    minDrop:0.3,                 // pinggul minimal 0.3 x torso di bawah bahu (badan miring s.d. ±72°, cukup untuk yeop/dwi chagi)
+    maxShW:1.8,                  // lebar bahu maks 1.8 x torso (batas bawah tidak dipakai: posisi menyamping/kyorugi/putaran)
+    noseTol:0.1,                 // hidung tidak boleh lebih dari 0.1 x torso di bawah garis bahu
+    maxArm:1.4,maxLegSeg:1.7,    // panjang tiap segmen lengan / kaki relatif torso
+    segV:0.3,                    // segmen dicek bila kedua ujungnya visibility > 0.3
+    noseV:0.5,                   // hidung harus terlihat (kecuali kamera dari belakang)
+    legV:0.5,legVBack:0.4,       // kaki lengkap: lutut & pergelangan kaki di atas nilai ini
+    minBodyH:0.2,                // tinggi kepala sampai kaki minimal 20% tinggi frame
+    minLeg:0.8,                  // panjang kaki (paha + betis) minimal 0.8 x torso
+    confN:8,confGap:0.5,lostT:1.2 // konfirmasi: 8 frame berturut-turut, jeda maks 0.5 dtk; hilang > 1.2 dtk = konfirmasi ulang
+  };
+  const KIN={
+    distV:0.5,proxV:0.4,         // pergelangan (tangan/kaki) > 0.5 dan siku/lutut > 0.4 supaya dihitung
+    distVBack:0.35,proxVBack:0.3,// dari belakang badan visibility memang lebih rendah
+    vMax:80,                     // di atas 80 torso/detik = loncatan tracking, dibuang
+    dispKick:0.8,                // tendangan: pergelangan kaki pindah minimal 0.8 x torso dari titik awal
+    dispMove:0.5                 // teknik poomsae (makki/jireugi dsb.): minimal 0.5 x torso; jireugi dari depan tampak memendek
+  };
+  // L = landmark MediaPipe (x,y 0..1, visibility), W/H = ukuran frame dalam piksel, opt.view = auto|depan|samping|belakang
+  function plausible(L,W,H,opt){
+    if(!L||L.length<29||!(W>0)||!(H>0))return false;
+    const v=i=>{const q=L[i],x=q&&(q.visibility!==undefined?q.visibility:q.v);return typeof x==="number"&&isFinite(x)?x:0};
+    const P=i=>({x:L[i].x*W,y:L[i].y*H});
+    const view=(opt&&opt.view)||"auto";
+    // dari belakang badan wajah tidak terlihat: aturan hidung diganti syarat kedua kaki lengkap
+    const back=view==="belakang"||(view==="auto"&&v(0)<PG.noseV);
+    if([11,12,23,24].some(i=>v(i)<(back?PG.coreVBack:PG.coreV)))return false;
+    const ids=back?[11,12,13,14,15,16,23,24,25,26,27,28]:[0,11,12,13,14,15,16,23,24,25,26,27,28];
+    if(ids.reduce((s,i)=>s+v(i),0)/ids.length<(back?PG.meanVBack:PG.meanV))return false;
+    const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+    const sh=mid(P(11),P(12)),hp=mid(P(23),P(24)),tor=d(sh,hp);
+    if(!(tor>=PG.minTorsoH*H))return false;
+    if(hp.y-sh.y<PG.minDrop*tor)return false;
+    if(d(P(11),P(12))>PG.maxShW*tor)return false;
+    if(!back&&v(0)<PG.noseV)return false;
+    if(!back&&P(0).y>sh.y+PG.noseTol*tor)return false;
+    const long=(a,b,mx)=>v(a)>PG.segV&&v(b)>PG.segV&&d(P(a),P(b))>mx*tor;
+    if([[11,13],[13,15],[12,14],[14,16]].some(s=>long(s[0],s[1],PG.maxArm)))return false;
+    if([[23,25],[25,27],[24,26],[26,28]].some(s=>long(s[0],s[1],PG.maxLegSeg)))return false;
+    const lv=back?PG.legVBack:PG.legV,legs=[[23,25,27],[24,26,28]].filter(g=>v(g[1])>lv&&v(g[2])>lv);
+    if(legs.length<(back?2:1))return false;
+    if(Math.max(...legs.map(g=>d(P(g[0]),P(g[1]))+d(P(g[1]),P(g[2]))))<PG.minLeg*tor)return false;
+    const top=!back&&v(0)>=PG.noseV?Math.min(P(0).y,sh.y):sh.y-0.3*tor,foot=Math.max(...legs.map(g=>P(g[2]).y));
+    if(foot-top<PG.minBodyH*H)return false;
+    return true;
+  }
+  // Konfirmasi per subjek. step(t detik, ok) -> true bila data frame ini boleh dipakai (subjek sudah sah dan frame lolos).
+  function poseConfirmer(){
+    let streak=0,lastOk=-1e9,conf=false;
+    return {
+      step(t,ok){
+        if(ok){
+          if(conf&&t-lastOk>PG.lostT)conf=false;
+          streak=(!conf&&t-lastOk>PG.confGap)?1:streak+1;lastOk=t;
+          if(!conf&&streak>=PG.confN)conf=true;
+          return conf;
+        }
+        streak=0;
+        if(conf&&t-lastOk>PG.lostT)conf=false;
+        return false;
+      },
+      get confirmed(){return conf}
+    };
+  }
+  // fr: [{t,p}] urut waktu (p=null bila tidak terdeteksi/tidak lolos plausible). Frame sebelum subjek sah dikosongkan.
+  function poseConfirmSeq(fr){const c=poseConfirmer();return fr.map(f=>({t:f.t,p:c.step(f.t,!!f.p)?f.p:null}))}
+  // Titik ujung yang boleh dipakai menghitung gerakan: pergelangan tangan 15/16 (siku 13/14), pergelangan kaki 27/28 (lutut 25/26)
+  const KIN_PROX={15:13,16:14,27:25,28:26};
+  function kinPt(p,i,back){const a=p&&p[i],b=p&&p[KIN_PROX[i]];return a&&b&&a.v>(back?KIN.distVBack:KIN.distV)&&b.v>(back?KIN.proxVBack:KIN.proxV)?a:null}
+  // Jumlah frame yang diambil dari video unggahan: jeda antar frame dijaga < 0.5 dtk supaya konfirmasi 8 frame tetap bisa jalan di video panjang
+  function poseN(dur){return Math.max(Math.min(240,Math.max(20,Math.round(dur*8))),Math.ceil(dur*0.98/(PG.confGap*0.9))+1)}
+  // ==POSE-GUARD-END==
   const MP_MODEL="https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
 let _poseLm=null,_poseCPU=false;
 const _isIOS=()=>/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
@@ -2232,18 +2314,21 @@ async function poseAnalyze(file,mode,st,progress){
     try{await v.play();v.pause()}catch(e){}
     const dur=v.duration;
     if(!isFinite(dur)||dur<2)throw new Error(T("Video terlalu pendek atau rusak","Video too short or broken"));
-    const n=Math.min(240,Math.max(20,Math.round(dur*8)));
+    const n=poseN(dur);
     const sc=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
-    const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),pts=[];
+    const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),pts=[],ts=[],vw=window.__anaView||"auto";
     for(let i=0;i<n;i++){
-      await new Promise(res=>{const tm=setTimeout(res,6000);v.onseeked=()=>{clearTimeout(tm);res()};v.currentTime=dur*(0.02+0.96*i/(n-1))});
+      const tt=dur*(0.02+0.96*i/(n-1));
+      await new Promise(res=>{const tm=setTimeout(res,6000);v.onseeked=()=>{clearTimeout(tm);res()};v.currentTime=tt});
       ctx.drawImage(v,0,0,w,h);
       let r;try{r=lm.detect(cv)}catch(e){if(_poseCPU)throw e;_poseCPU=true;_poseLm=null;lm=await loadPose();r=lm.detect(cv)}
       const L=r&&r.landmarks&&r.landmarks[0];
-      pts.push(L?L.map(p=>({x:p.x*w,y:p.y*h,v:p.visibility})):null);
+      pts.push(L&&plausible(L,w,h,{view:vw})?L.map(p=>({x:p.x*w,y:p.y*h,v:p.visibility})):null);ts.push(tt);
       if(i%5===0)progress(T("Menganalisa gerakan ","Analyzing motion ")+Math.round(i/n*100)+"%");
     }
-    return poseScore(pts,mode,st,dur);
+    // subjek baru sah setelah 8 frame berturut-turut lolos plausible(); frame sebelum itu tidak dipakai
+    const cf=poseConfirmSeq(pts.map((p,i)=>({t:ts[i],p})));
+    return poseScore(cf.map(f=>f.p),mode,st,dur,null,ts);
   }finally{URL.revokeObjectURL(url)}
 }
 // Haluskan getaran deteksi: median 3 frame per titik tubuh (membuang lonjakan 1 frame)
@@ -2274,18 +2359,36 @@ function poseView(pts){
   nv.sort((a,b)=>a-b);const nose=nv.length?nv[Math.floor(nv.length/2)]:1;
   return (nose<0.5||(rev/n>0.7&&nose<0.8))?"belakang":"depan";
 }
-function poseScore(pts,mode,st,dur,view){
+function poseScore(pts,mode,st,dur,view,ts){
   pts=poseSmooth(pts);
+  const tAt=i=>ts&&Number.isFinite(ts[i])?ts[i]:dur*i/Math.max(1,pts.length-1);
   const vSel=view||(typeof window!=="undefined"&&window.__anaView)||"auto",vw=vSel!=="auto"?vSel:poseView(pts),back=vw==="belakang";
   const th=back?0.35:0.5,ok=(p,i)=>p[i]&&p[i].v>th,okW=(p,i)=>p[i]&&p[i].v>(back?0.25:0.5),d2=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
   const ang=(a,b,c)=>{const x1=a.x-b.x,y1=a.y-b.y,x2=c.x-b.x,y2=c.y-b.y,m=Math.hypot(x1,y1)*Math.hypot(x2,y2);return m?Math.acos(Math.max(-1,Math.min(1,(x1*x2+y1*y2)/m)))*180/Math.PI:180};
-  const rows=[];
-  for(const p of pts){
-    if(!p||![11,12,23,24,25,26,27,28].every(i=>ok(p,i)))continue;
+  const rows0=[];
+  pts.forEach((p,i)=>{
+    if(!p||![11,12,23,24,25,26,27,28].every(i=>ok(p,i)))return;
     const sh={x:(p[11].x+p[12].x)/2,y:(p[11].y+p[12].y)/2},hp={x:(p[23].x+p[24].x)/2,y:(p[23].y+p[24].y)/2},tor=d2(sh,hp);
-    if(tor<8)continue;
+    if(tor<8)return;
     const kL=(p[26].y-p[27].y)/tor>0.15,kR=(p[25].y-p[28].y)/tor>0.15,hL=(hp.y-p[27].y)/tor,hR=(hp.y-p[28].y)/tor,both=okW(p,15)&&okW(p,16);
-    rows.push({knee:(ang(p[23],p[25],p[27])+ang(p[24],p[26],p[28]))/2,leg:((p[27].y+p[28].y)/2-hp.y)/tor,kick:kL||kR,kh:(kL&&kR)?Math.max(hL,hR):kL?hL:kR?hR:null,guard:both?((hp.y-p[15].y)/tor>0.35&&(hp.y-p[16].y)/tor>0.35):null});
+    rows0.push({t:tAt(i),tor,an:[kinPt(p,27,back),kinPt(p,28,back)],kL,kR,hL,hR,knee:(ang(p[23],p[25],p[27])+ang(p[24],p[26],p[28]))/2,leg:((p[27].y+p[28].y)/2-hp.y)/tor,guard:both?((hp.y-p[15].y)/tor>0.35&&(hp.y-p[16].y)/tor>0.35):null});
+  });
+  // Gerbang kinematik (lapis 3): pergelangan kaki yang meloncat > KIN.vMax torso/dtk dibuang sebagai loncatan tracking
+  const rows=[];let lastA=null;
+  rows0.forEach(r=>{
+    if(lastA){const dt=r.t-lastA.t;if(dt>0&&dt<=PG.confGap&&[0,1].some(s=>r.an[s]&&lastA.an[s]&&d2(r.an[s],lastA.an[s])/r.tor/dt>KIN.vMax))return}
+    rows.push(r);lastA=r;
+  });
+  // tendangan baru dihitung bila pergelangan kaki yang menendang (pergelangan > 0.5, lutut > 0.4) berpindah minimal KIN.dispKick x torso
+  // dari titik awalnya; getaran di tempat tidak dihitung. Tinggi tendangan hanya diklasifikasi dari tendangan yang lolos gerbang ini.
+  const kk=r=>(r.kL&&!!r.an[0])||(r.kR&&!!r.an[1]);
+  for(let a=0;a<rows.length;){
+    if(!kk(rows[a])){rows[a].kick=false;rows[a].kh=null;a++;continue}
+    let b=a;while(b+1<rows.length&&kk(rows[b+1]))b++;
+    const o=rows[a-1]||rows[a];let pass=false;
+    [0,1].forEach(s=>{const s0=o.an[s]||rows[a].an[s];if(!s0)return;for(let j=a;j<=b;j++){const r=rows[j];if((s?r.kR:r.kL)&&r.an[s]&&d2(r.an[s],s0)/r.tor>=KIN.dispKick)pass=true}});
+    for(let j=a;j<=b;j++){const r=rows[j],gL=pass&&r.kL&&!!r.an[0],gR=pass&&r.kR&&!!r.an[1];r.kick=gL||gR;r.kh=(gL&&gR)?Math.max(r.hL,r.hR):gL?r.hL:gR?r.hR:null}
+    a=b+1;
   }
   const valid=rows.length/pts.length;
   if(valid<0.4)throw new Error(T("Tubuh murid kurang terdeteksi. Pastikan seluruh badan terlihat, kamera diam, dan hanya ada satu murid di layar.","The student's body was poorly detected. Make sure the whole body is visible, the camera is steady, and only one student is on screen."));
@@ -2416,7 +2519,7 @@ function anaFrames(file,n){return new Promise((resolve,reject)=>{
       try{await _tmo(lm.setOptions({numPoses:6}),8000,"x")}catch(e){}
       const r=lm.detect(cv);
       if(myId!==anaState.runId)return;
-      const people=((r&&r.landmarks)||[]).map(poseBox).filter(Boolean).sort((a,b)=>a.cx-b.cx);
+      const people=((r&&r.landmarks)||[]).filter(L=>plausible(L,w,h,{view:window.__anaView||"auto"})).map(poseBox).filter(Boolean).sort((a,b)=>a.cx-b.cx);
       people.forEach((p,i)=>p.n=i+1);
       anaState.prev={url:cv.toDataURL("image/jpeg",0.72),w,h,people,t:tr};
     }catch(err){if(myId===anaState.runId)anaState.err=err.message||String(err);}
@@ -2462,25 +2565,27 @@ function anaFrames(file,n){return new Promise((resolve,reject)=>{
       try{await v.play();v.pause()}catch(e){}
       const dur=v.duration;
       if(!isFinite(dur)||dur<2)throw new Error(T("Video terlalu pendek atau rusak","Video too short or broken"));
-      const raw=mode==="__raw",n=Math.min(240,Math.max(20,Math.round(dur*8)));
+      const raw=mode==="__raw",n=poseN(dur),vw=window.__anaView||"auto",ts=Array.from({length:n},(_,i)=>dur*(0.02+0.96*i/(n-1)));
       const sc=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
       const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),dets=[];
       for(let i=0;i<n;i++){
         await new Promise(res=>{const tm=setTimeout(res,6000);v.onseeked=()=>{clearTimeout(tm);res()};v.currentTime=dur*(0.02+0.96*i/(n-1))});
         ctx.drawImage(v,0,0,w,h);
         let r;try{r=lm.detect(cv)}catch(e){if(_poseCPU)throw e;_poseCPU=true;_poseLm=null;lm=await loadPose();await setN();r=lm.detect(cv)}
-        dets.push(((r&&r.landmarks)||[]).map(L=>{const b=poseBox(L);return b?{b,pts:L.map(p=>({x:p.x*w,y:p.y*h,v:p.visibility}))}:null}).filter(Boolean));
+        dets.push(((r&&r.landmarks)||[]).filter(L=>plausible(L,w,h,{view:vw})).map(L=>{const b=poseBox(L);return b?{b,pts:L.map(p=>({x:p.x*w,y:p.y*h,v:p.visibility}))}:null}).filter(Boolean));
         if(i%4===0)progress(T("Menganalisa gerakan ","Analyzing motion ")+Math.round(i/n*100)+"%");
       }
       // pelacakan: ikuti tiap orang yang diketuk dari titik pilihan ke depan dan ke belakang
       const iSel=Math.max(0,Math.min(n-1,Math.round(tr*(n-1))));
       const tracks=anaTrack(dets,people,iSel);
+      // tiap orang baru sah setelah 8 frame berturut-turut lolos plausible(); hilang > 1.2 dtk = konfirmasi ulang
+      tracks.forEach(t=>{t.pts=poseConfirmSeq(ts.map((tt,i)=>({t:tt,p:t.pts[i]}))).map(f=>f.p)});
       // dua orang sering sangat berdekatan -> pelacakan bisa tertukar
       let close=0;
       if(tracks.length>1){for(let i=0;i<n;i++){const ps=dets[i];if(ps.length<2)continue;let c=false;for(let a=0;a<ps.length&&!c;a++)for(let b2=a+1;b2<ps.length;b2++){if(Math.hypot(ps[a].b.cx-ps[b2].b.cx,ps[a].b.cy-ps[b2].b.cy)/Math.max(ps[a].b.h,ps[b2].b.h,0.15)<0.5){c=true;break}}if(c)close++}}
       const swapRisk=close/n>0.25;
-      if(raw)return {tracks,dur,ts:Array.from({length:n},(_,i)=>dur*(0.02+0.96*i/(n-1))),warn:swapRisk};
-      return tracks.map(t=>{try{return{st:t.st,n:t.n,result:poseScore(t.pts,mode,t.st,dur),warn:swapRisk}}catch(e){return{st:t.st,n:t.n,error:e.message||String(e),warn:swapRisk}}});
+      if(raw)return {tracks,dur,ts,warn:swapRisk};
+      return tracks.map(t=>{try{return{st:t.st,n:t.n,result:poseScore(t.pts,mode,t.st,dur,null,ts),warn:swapRisk}}catch(e){return{st:t.st,n:t.n,error:e.message||String(e),warn:swapRisk}}});
     }finally{URL.revokeObjectURL(url)}
   }
   const ANA_COL=["#C8102E","#1D3FA6","#1E7B4F","#B7791F","#6B2FA6","#0E8A8A"];
@@ -2618,19 +2723,19 @@ ${JSON.stringify(tel)}`;
       try{await v.play();v.pause()}catch(e){}
       const dur=v.duration;
       if(!isFinite(dur)||dur<2)throw new Error(T("Video terlalu pendek atau rusak","Video too short or broken"));
-      const n=Math.min(240,Math.max(20,Math.round(dur*8)));
+      const n=poseN(dur);
       const sc=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
-      const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),fr=[];
+      const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),fr=[],vw=window.__anaView||"auto";
       for(let i=0;i<n;i++){
         const t=dur*(0.01+0.98*i/(n-1));
         await new Promise(res=>{const tm=setTimeout(res,6000);v.onseeked=()=>{clearTimeout(tm);res()};v.currentTime=t});
         ctx.drawImage(v,0,0,w,h);
         let r;try{r=lm.detect(cv)}catch(e){if(_poseCPU)throw e;_poseCPU=true;_poseLm=null;lm=await loadPose();r=lm.detect(cv)}
         const L=r&&r.landmarks&&r.landmarks[0];
-        fr.push({t,p:L?L.map(q=>({x:q.x*w,y:q.y*h,v:q.visibility})):null});
+        fr.push({t,p:L&&plausible(L,w,h,{view:vw})?L.map(q=>({x:q.x*w,y:q.y*h,v:q.visibility})):null});
         if(i%5===0)progress(T("Mengukur gerakan ","Measuring motion ")+Math.round(i/n*100)+"%");
       }
-      return {fr,dur};
+      return {fr:poseConfirmSeq(fr),dur};
     }finally{URL.revokeObjectURL(url)}
   }
   function pmTelemetry(fr,dur,opt){
@@ -2644,15 +2749,20 @@ ${JSON.stringify(tel)}`;
     fr.forEach(f=>{const p=f.p;if(!p||![11,12,23,24,25,26,27,28].every(i=>ok(p,i)))return;
       const sh={x:(p[11].x+p[12].x)/2,y:(p[11].y+p[12].y)/2},hp={x:(p[23].x+p[24].x)/2,y:(p[23].y+p[24].y)/2},tor=d2(sh,hp);if(tor<8)return;
       const yaw=(!noYaw&&ok(p,0)&&ok(p,7)&&ok(p,8)&&Math.abs(p[7].x-p[8].x)>4)?(p[0].x-(p[7].x+p[8].x)/2)/Math.abs(p[7].x-p[8].x):null;
-      rows.push({t:f.t,tor,hp,sh,yaw,kL:ang(p[23],p[25],p[27]),kR:ang(p[24],p[26],p[28]),lean:Math.atan2(Math.abs(sh.x-hp.x),Math.max(1,hp.y-sh.y))*180/Math.PI,ex:[15,16,27,28].map(i=>ok(p,i)?{x:p[i].x,y:p[i].y}:null)});});
+      rows.push({t:f.t,tor,hp,sh,yaw,kL:ang(p[23],p[25],p[27]),kR:ang(p[24],p[26],p[28]),lean:Math.atan2(Math.abs(sh.x-hp.x),Math.max(1,hp.y-sh.y))*180/Math.PI,ex:[15,16,27,28].map(i=>ok(p,i)?{x:p[i].x,y:p[i].y}:null),mx:[15,16,27,28].map(i=>{const a=kinPt(p,i,false);return a?{x:a.x,y:a.y}:null})});});
     const valid=rows.length/fr.length;
     if(valid<0.4)throw new Error(T("Tubuh murid kurang terdeteksi. Pastikan seluruh badan terlihat, kamera diam, dan hanya ada satu murid di layar.","The student's body was poorly detected. Make sure the whole body is visible, the camera is steady, and only one student is on screen."));
     const tor0=q(rows.map(r=>r.tor),0.5);
     // kecepatan ekstremitas (panjang torso per detik)
-    rows.forEach((r,i)=>{let m=0;if(i>0){const a=rows[i-1],dt=r.t-a.t;if(dt>0)r.ex.forEach((e,k)=>{const o=a.ex[k];if(e&&o)m=Math.max(m,Math.hypot(e.x-o.x,e.y-o.y)/tor0/dt)})}r.sp=m});
+    // gerbang kinematik: pergelangan > 0.5 & siku/lutut > 0.4; kecepatan > KIN.vMax torso/dtk = loncatan tracking, titiknya dibuang
+    rows.forEach((r,i)=>{let m=0;if(i>0){const a=rows[i-1],dt=r.t-a.t;if(dt>0)r.mx.forEach((e,k)=>{const o=a.mx[k];if(!e||!o)return;const s=Math.hypot(e.x-o.x,e.y-o.y)/tor0/dt;if(s>KIN.vMax)r.mx[k]=null;else m=Math.max(m,s)})}r.sp=m});
     rows.forEach((r,i)=>{const a=rows[i-1]||r,b=rows[i+1]||r;r.ms=(a.sp+r.sp+b.sp)/3});
     const p90=q(rows.map(r=>r.ms),0.9),thr=Math.max(0.8,0.35*p90),still=0.5*thr;
-    const peaks=[];rows.forEach((r,i)=>{if(r.ms<thr)return;const a=rows[i-1],b=rows[i+1];if((!a||r.ms>=a.ms)&&(!b||r.ms>=b.ms)){const last=peaks[peaks.length-1];if(last&&r.t-last.t<0.4){if(r.ms>last.ms){last.t=r.t;last.ms=r.ms}}else peaks.push({t:r.t,ms:r.ms})}});
+    const pk0=[];rows.forEach((r,i)=>{if(r.ms<thr)return;const a=rows[i-1],b=rows[i+1];if((!a||r.ms>=a.ms)&&(!b||r.ms>=b.ms)){const last=pk0[pk0.length-1];if(last&&r.t-last.t<0.4){if(r.ms>last.ms){last.t=r.t;last.ms=r.ms;last.i=i}}else pk0.push({t:r.t,ms:r.ms,i})}});
+    // gerakan baru dihitung bila salah satu titik ujung berpindah minimal KIN.dispMove x torso dari titik awal gerakan (getaran di tempat tidak dihitung)
+    const peaks=pk0.filter(pk=>{let s=pk.i,e=pk.i;while(s>0&&rows[s].ms>=still)s--;while(e<rows.length-1&&rows[e].ms>=still)e++;
+      for(let k=0;k<4;k++){let o=null;for(let j=s;j<=pk.i&&!o;j++)o=rows[j].mx[k];if(!o)continue;for(let j=s;j<=e;j++){const c=rows[j].mx[k];if(c&&Math.hypot(c.x-o.x,c.y-o.y)/tor0>=KIN.dispMove)return true}}
+      return false});
     const moveAt=t=>1+peaks.filter(p=>p.t<t-0.05).length;
     const evs=[],add=(t,type,sev,detail,ded,val)=>evs.push({t:Math.round(t*10)/10,gerakan:moveAt(t),jenis:type,tingkat:sev,detail,potongan:ded,nilai:val});
     // stabilitas per jendela diam
@@ -3096,16 +3206,17 @@ ${JSON.stringify(tel)}`;
     const bar=liveEl("liveMic");if(bar)bar.style.width=Math.min(100,Math.round(rms/Math.max(thr,0.02)*50))+"%";
     const kc=liveEl("liveKihap");if(kc)kc.textContent=L.bursts.length;
   }
-  function liveTrackStep(dets){
+  // seen = orang ini sudah sah (8 frame berturut-turut lolos plausible()). Yang belum sah tidak digambar, tidak bisa dipilih, dan tidak direkam.
+  function liveTrackStep(dets,now){
     const L=liveState,tr=L.tracks,pairs=[];
     tr.forEach((t,ti)=>dets.forEach((d,di)=>{
       const dist=Math.hypot(d.b.cx-t.b.cx,d.b.cy-t.b.cy)/Math.max(t.b.h,0.15),gate=0.9*(1+0.5*Math.min(t.miss,4));
       if(dist>gate)return;const ratio=d.b.h/Math.max(t.href,0.01);if(ratio<0.6||ratio>1.6)return;pairs.push([dist,ti,di]);
     }));
     pairs.sort((a,b)=>a[0]-b[0]);const ut=new Set(),ud=new Set();
-    for(const [,ti,di] of pairs){if(ut.has(ti)||ud.has(di))continue;ut.add(ti);ud.add(di);const t=tr[ti],d=dets[di];t.pts=d.pts;t.b=d.b;t.href=0.85*t.href+0.15*d.b.h;t.miss=0;t.seen=true}
-    tr.forEach((t,ti)=>{if(!ut.has(ti)){t.miss++;t.seen=false;t.pts=null}});
-    dets.forEach((d,di)=>{if(ud.has(di)||tr.length>=12||d.b.h<0.12)return;tr.push({id:L.nextId++,b:d.b,href:d.b.h,miss:0,seen:true,pts:d.pts,fr:[],moveT:0,frozen:false})});
+    for(const [,ti,di] of pairs){if(ut.has(ti)||ud.has(di))continue;ut.add(ti);ud.add(di);const t=tr[ti],d=dets[di];t.pts=d.pts;t.b=d.b;t.href=0.85*t.href+0.15*d.b.h;t.miss=0;t.seen=t.cf.step(now,true)}
+    tr.forEach((t,ti)=>{if(!ut.has(ti)){t.miss++;t.cf.step(now,false);t.seen=false;t.pts=null}});
+    dets.forEach((d,di)=>{if(ud.has(di)||tr.length>=12||d.b.h<0.12)return;const cf=poseConfirmer();tr.push({id:L.nextId++,b:d.b,href:d.b.h,miss:0,cf,seen:cf.step(now,true),pts:d.pts,fr:[],moveT:0,frozen:false})});
     L.tracks=tr.filter(t=>t.miss<40||L.sel[t.id]);
   }
   function liveRecord(t){
@@ -3115,9 +3226,14 @@ ${JSON.stringify(tel)}`;
       const prev=tr.fr.length?tr.fr[tr.fr.length-1]:null;
       tr.fr.push({t,p:tr.seen?tr.pts:null});
       if(!tr.moveT)tr.moveT=t;
-      if(prev&&prev.p&&tr.pts){
+      if(prev&&prev.p&&tr.seen&&tr.pts){
         const sh={x:(tr.pts[11].x+tr.pts[12].x)/2,y:(tr.pts[11].y+tr.pts[12].y)/2},hp={x:(tr.pts[23].x+tr.pts[24].x)/2,y:(tr.pts[23].y+tr.pts[24].y)/2},tor=Math.hypot(sh.x-hp.x,sh.y-hp.y),dt=t-prev.t;
-        if(tor>8&&dt>0){let m=0;[15,16,27,28].forEach(i=>{if(tr.pts[i].v>0.5&&prev.p[i].v>0.5)m=Math.max(m,Math.hypot(tr.pts[i].x-prev.p[i].x,tr.pts[i].y-prev.p[i].y)/tor/dt)});if(m>0.5)tr.moveT=t}
+        // gerbang kinematik: hanya titik yang terlihat jelas, kecepatan <= KIN.vMax, dan sudah berpindah >= KIN.dispMove x torso dari titik awal
+        if(tor>8&&dt>0){
+          const bk=pmState.view==="belakang",anc=tr.anc||(tr.anc={});let moved=false;
+          [15,16,27,28].forEach(i=>{const a=kinPt(tr.pts,i,bk),o=kinPt(prev.p,i,bk);if(!a)return;if(!anc[i])anc[i]={x:a.x,y:a.y};if(!o)return;const s=Math.hypot(a.x-o.x,a.y-o.y)/tor/dt;if(s>0.5&&s<=KIN.vMax&&Math.hypot(a.x-anc[i].x,a.y-anc[i].y)/tor>=KIN.dispMove)moved=true});
+          if(moved){tr.moveT=t;tr.anc={};[15,16,27,28].forEach(i=>{const a=kinPt(tr.pts,i,bk);if(a)tr.anc[i]={x:a.x,y:a.y}})}
+        }
       }
       tr.frozen=t-tr.moveT>=3&&t>3;
     });
@@ -3148,8 +3264,8 @@ ${JSON.stringify(tel)}`;
       if(v&&v.readyState>=2&&v.videoWidth){
         const w=v.videoWidth,h=v.videoHeight;
         let r=null;try{r=L.lm.detect(v)}catch(e){}
-        const dets=((r&&r.landmarks)||[]).map(Lm=>{const b=poseBox(Lm);return b?{b,pts:Lm.map(p=>({x:p.x*w,y:p.y*h,v:p.visibility}))}:null}).filter(Boolean);
-        liveTrackStep(dets);
+        const dets=((r&&r.landmarks)||[]).filter(Lm=>plausible(Lm,w,h,{view:pmState.view||"auto"})).map(Lm=>{const b=poseBox(Lm);return b?{b,pts:Lm.map(p=>({x:p.x*w,y:p.y*h,v:p.visibility}))}:null}).filter(Boolean);
+        liveTrackStep(dets,performance.now()/1000);
         if(L.rec){
           const t=performance.now()/1000-L.t0;liveRecord(t);
           const tm=liveEl("liveTimer");if(tm)tm.textContent=String(Math.floor(t/60)).padStart(2,"0")+":"+String(Math.floor(t%60)).padStart(2,"0");
@@ -3174,7 +3290,7 @@ ${JSON.stringify(tel)}`;
       if(ids.some(id=>!L.sel[id].sid))return toast(T("Pilih murid untuk tiap orang, atau ganti ke Analisa bebas","Choose a student for each person, or switch to Free analysis"));
       if(ids.some(id=>{const s=S.find(x=>x.id===L.sel[id].sid);return !s||!s.foto}))return toast(T("Ada murid tanpa izin foto/video","A student has no photo/video consent"));
     }
-    pmReset();anaState.multi=null;anaState.res=null;anaState.err="";L.tracks.forEach(t=>{t.fr=[];t.moveT=0;t.frozen=false});L.bursts=[];L.t0=performance.now()/1000;L.rec=true;draw();
+    pmReset();anaState.multi=null;anaState.res=null;anaState.err="";L.tracks.forEach(t=>{t.fr=[];t.moveT=0;t.frozen=false;t.anc=null});L.bursts=[];L.t0=performance.now()/1000;L.rec=true;draw();
   }
   async function liveFinish(){
     const L=liveState;if(!L.rec)return;
@@ -3185,7 +3301,7 @@ ${JSON.stringify(tel)}`;
     const stubOf=p=>pmState.free?{id:"",_n:String(p.cfg.name||"").trim()||T("Orang #","Person #")+p.id,b:""}:S.find(x=>x.id===p.cfg.sid);
     if(anaState.mode!=="poomsae"){ // Kyorugi / Latihan umum: penilaian sama seperti unggah video
       const mode=anaState.mode;
-      const out=picks.map(p=>{const st=stubOf(p);try{return {st,n:p.id,result:poseScore(p.tr.fr.map(f=>f.p),mode,st,dur,pmState.view)}}catch(err){return {st,n:p.id,error:err.message||String(err)}}});
+      const out=picks.map(p=>{const st=stubOf(p);try{return {st,n:p.id,result:poseScore(p.tr.fr.map(f=>f.p),mode,st,dur,pmState.view,p.tr.fr.map(f=>f.t))}}catch(err){return {st,n:p.id,error:err.message||String(err)}}});
       liveOff();
       if(pmState.free)pmState.fk=out.map(o=>({name:o.st._n,result:o.result,error:o.error}));
       else{try{await anaSaveOut(out.filter(o=>o.st&&o.st.id),mode)}catch(err){anaState.err=err.message||String(err)}if(anaState.err){pmState.err=anaState.err;anaState.err=""}}
