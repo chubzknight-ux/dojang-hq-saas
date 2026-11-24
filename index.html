@@ -2868,6 +2868,8 @@ ${JSON.stringify(tel)}`;
   const liveState={active:false,starting:false,rec:false,stream:null,video:null,cv:null,wrap:null,lm:null,tracks:[],nextId:1,sel:{},bursts:[],t0:0,msg:"",err:"",hasMic:false,mic:{ring:[],on:false,start:0,last:0,pk:0,peak:0},loopT:0,micT:0,ac:null,an:null,buf:null,wake:null,offCount:0};
   const LIVE_SKEL=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
   const liveEl=id=>document.getElementById(id);
+  // Sesuaikan bingkai dengan arah kamera sebenarnya (portrait atau landscape) supaya gambar tidak melar dan kotak orang tepat
+  function liveFit(W,w,h){if(!W||!w||!h)return;W.style.aspectRatio=w+" / "+h;W.style.width="min(100%, calc(68vh * "+(w/h).toFixed(4)+"))"}
   function liveAttach(){const L=liveState;if(!L.active||!L.wrap)return;const h=liveEl("liveHost");if(h&&L.wrap.parentNode!==h){h.appendChild(L.wrap);try{L.video.play()}catch(e){}}}
   new MutationObserver(()=>{if(liveState.active&&liveState.wrap&&!liveState.wrap.isConnected)liveAttach()}).observe(document.body,{childList:true,subtree:true});
   async function liveOn(){
@@ -2891,9 +2893,9 @@ ${JSON.stringify(tel)}`;
       try{await v.play()}catch(e){}
       const cv=document.createElement("canvas");cv.width=v.videoWidth||1280;cv.height=v.videoHeight||720;
       cv.style.cssText="position:absolute;left:0;top:0;width:100%;height:100%;touch-action:manipulation";
-      v.style.cssText="width:100%;display:block;max-height:70vh;background:#000";
-      const wrap=document.createElement("div");wrap.style.cssText="position:relative;max-width:100%;line-height:0;background:#000;border-radius:10px;overflow:hidden";
-      wrap.appendChild(v);wrap.appendChild(cv);
+      v.style.cssText="width:100%;height:100%;display:block;object-fit:fill;background:#000";
+      const wrap=document.createElement("div");wrap.style.cssText="position:relative;line-height:0;background:#000;border-radius:10px;overflow:hidden;margin:0 auto";
+      wrap.appendChild(v);wrap.appendChild(cv);liveFit(wrap,cv.width,cv.height);
       cv.addEventListener("click",ev=>{
         if(L.rec)return;
         const r=cv.getBoundingClientRect(),x=(ev.clientX-r.left)/r.width,y=(ev.clientY-r.top)/r.height;
@@ -2902,7 +2904,7 @@ ${JSON.stringify(tel)}`;
         if(L.sel[hit.id])delete L.sel[hit.id];else L.sel[hit.id]={name:"",sid:""};
         draw();
       });
-      Object.assign(L,{stream,video:v,cv,wrap,lm,tracks:[],nextId:1,sel:{},bursts:[],rec:false});
+      Object.assign(L,{stream,video:v,cv,wrap,lm,tracks:[],nextId:1,sel:{},bursts:[],rec:false,autoSel:false});
       L.hasMic=stream.getAudioTracks().length>0;
       L.mic={ring:[],on:false,start:0,last:0,pk:0,peak:0};
       if(L.hasMic){
@@ -2972,7 +2974,7 @@ ${JSON.stringify(tel)}`;
   }
   function liveDraw(w,h){
     const L=liveState,cv=L.cv;if(!cv)return;
-    if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}
+    if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;liveFit(L.wrap,w,h)}
     const ctx=cv.getContext("2d");ctx.clearRect(0,0,w,h);
     const fs=Math.max(14,Math.round(w/50));ctx.font="700 "+fs+"px sans-serif";ctx.textBaseline="top";
     L.tracks.forEach(t=>{
@@ -3003,6 +3005,7 @@ ${JSON.stringify(tel)}`;
           const tm=liveEl("liveTimer");if(tm)tm.textContent=String(Math.floor(t/60)).padStart(2,"0")+":"+String(Math.floor(t%60)).padStart(2,"0");
           if(t>300)liveFinish();
         }
+        if(!L.rec&&!L.autoSel&&!Object.keys(L.sel).length){const seen=L.tracks.filter(t=>t.seen);if(seen.length===1&&seen[0].miss===0){L.sel[seen[0].id]={name:"",sid:""};L.autoSel=true;draw()}}
         liveDraw(w,h);
         const sn=liveEl("liveSeen");if(sn)sn.textContent=L.tracks.filter(t=>t.seen).length;
       }
@@ -3011,8 +3014,12 @@ ${JSON.stringify(tel)}`;
   }
   function liveRec(){
     const L=liveState;if(!L.active||L.rec)return;
+    if(!Object.keys(L.sel).length){ // satu orang di layar: otomatis dipilih
+      const seen=L.tracks.filter(t=>t.seen);
+      if(seen.length===1){L.sel[seen[0].id]={name:"",sid:""};if(!pmState.free){draw();return toast(T("Pilih murid untuk orang ini, lalu tekan Mulai rekam lagi","Choose the student for this person, then press Start again"))}}
+    }
     const ids=Object.keys(L.sel);
-    if(!ids.length)return toast(T("Ketuk orang di layar kamera dulu","Tap people on the camera view first"));
+    if(!ids.length)return toast(T("Tidak ada orang terdeteksi. Pastikan seluruh badan terlihat, atau ketuk orang di layar kamera.","No one detected. Make sure the full body is visible, or tap a person on the camera view."));
     if(!pmState.free){
       if(ids.some(id=>!L.sel[id].sid))return toast(T("Pilih murid untuk tiap orang, atau ganti ke Analisa bebas","Choose a student for each person, or switch to Free analysis"));
       if(ids.some(id=>{const s=S.find(x=>x.id===L.sel[id].sid);return !s||!s.foto}))return toast(T("Ada murid tanpa izin foto/video","A student has no photo/video consent"));
@@ -3035,8 +3042,8 @@ ${JSON.stringify(tel)}`;
     draw();
   }
   function liveCardHtml(){
-    const L=liveState,free=pmState.free,ids=Object.keys(L.sel),portrait=window.innerHeight>window.innerWidth;
-    let b=portrait?`<div class="note" style="margin-bottom:10px">📱 ${T("Putar HP ke landscape (mendatar) supaya semua peserta masuk layar. Taruh kamera diam, seluruh badan semua peserta terlihat.","Rotate your phone to landscape so everyone fits in the frame. Keep the camera still with every participant's full body visible.")}</div>`:"";
+    const L=liveState,free=pmState.free,ids=Object.keys(L.sel),portrait=false;
+    let b=!L.active&&!L.starting?`<div class="note" style="margin-bottom:10px">📱 ${T("Portrait cocok untuk 1 orang; untuk beberapa peserta putar HP ke landscape supaya semuanya masuk layar. Taruh kamera diam dan seluruh badan terlihat.","Portrait works for 1 person; for several participants rotate to landscape so everyone fits. Keep the camera still with full bodies visible.")}</div>`:"";
     if(L.starting)b+=`<p class="mu" id="liveMsg" style="margin:0">${esc(L.msg||"...")}</p>`;
     else if(!L.active){
       if(pmState.multi||pmState.rep)b+=""; 
@@ -3044,9 +3051,9 @@ ${JSON.stringify(tel)}`;
     }else{
       b+=`<div id="liveHost"></div>`;
       b+=`<div style="margin:8px 0;height:6px;background:var(--ln);border-radius:4px;overflow:hidden"><div id="liveMic" style="height:100%;width:0;background:#1E7B4F"></div></div><p class="mu" style="margin:0 0 8px;font-size:12.5px">${L.hasMic?"🎤 "+T("level suara (Kihap dibaca dari sini)","sound level (Kihap is read from this)"):"⚠ "+T("Mikrofon tidak aktif: Kihap tidak terbaca, pakai koreksi manual di Pengaturan.","Microphone not active: Kihap not readable, use the manual override in Settings.")} · 👥 <span id="liveSeen">0</span> ${T("terdeteksi","detected")}${L.rec?` · ⏺ <b id="liveTimer">00:00</b> · 🗣️ <b id="liveKihap">0</b> Kihap`:""}</p>`;
-      b+=L.rec?"":`<p class="mu" style="margin:0 0 8px;font-size:13px">${T("Ketuk kotak orang di layar kamera untuk memilih peserta, lalu isi namanya.","Tap the box of each person on the camera view to choose participants, then fill in their names.")}</p>`;
+      b+=L.rec?"":`<p class="mu" style="margin:0 0 8px;font-size:13px">${T("Kalau hanya 1 orang di layar, otomatis terpilih. Untuk beberapa orang, ketuk kotak tiap peserta lalu isi namanya.","If only 1 person is on screen they are selected automatically. For several people, tap each participant's box and fill in their names.")}</p>`;
       b+=ids.map(id=>{const c=ANA_COL[(id-1)%ANA_COL.length],cfg=L.sel[id];return `<div class="row" style="gap:8px;flex-wrap:wrap"><span style="display:flex;align-items:center;gap:8px;flex:1;min-width:220px"><b style="color:${c}">#${id}</b>${free?`<input data-livename="${id}" value="${esc(cfg.name||"")}" maxlength="40" placeholder="${T("Nama peserta (bebas diisi)","Participant name (free text)")}" style="flex:1" ${L.rec?"disabled":""}>`:`<select data-livesel="${id}" style="flex:1" ${L.rec?"disabled":""}><option value="">— ${T("pilih murid","choose student")} —</option>${anaOptsHtml(cfg.sid||"")}</select>`}</span>${L.rec?"":`<button type="button" class="btn ghost dn" data-pm="liveRm" data-id="${id}">✕</button>`}</div>`}).join("");
-      b+=`<p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap">${L.rec?`<button class="btn dn" data-pm="liveFin">⏹ ${T("Selesai & nilai","Finish & score")}</button>`:`<button class="btn" data-pm="liveRec" ${ids.length?"":"disabled"}>⏺ ${T("Mulai rekam","Start")} ${ids.length?"("+ids.length+" "+T("orang","people")+")":""}</button><button class="btn ghost" data-pm="liveOff">${T("Matikan kamera","Turn off camera")}</button>`}</p>`;
+      b+=`<p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap">${L.rec?`<button class="btn dn" data-pm="liveFin">⏹ ${T("Selesai & nilai","Finish & score")}</button>`:`<button class="btn" data-pm="liveRec">⏺ ${T("Mulai rekam","Start")} ${ids.length?"("+ids.length+" "+T("orang","people")+")":""}</button><button class="btn ghost" data-pm="liveOff">${T("Matikan kamera","Turn off camera")}</button>`}</p>`;
     }
     if(L.err)b+=`<p style="margin:10px 0 0"><span class="pill warn">${esc(L.err)}</span></p>`;
     return `<div class="sec"><h2>① ${T("Kamera live","Live camera")}</h2>${b}</div>`;
