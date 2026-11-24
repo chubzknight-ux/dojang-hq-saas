@@ -133,6 +133,7 @@ ATURAN GUARDRAIL TAMBAHAN:
 4. Jangkar Angka Presentation (wajib dipatuhi agar skor realistis):
    - Jika Konteks = UKT: rentang normal total Presentation adalah 4.20 – 5.10 (tiap sub-kriteria di kisaran 1.40 – 1.70).
    - Jika Konteks = Simulasi Kejuaraan: gunakan standar ketat di kisaran 3.60 – 4.70. Skor total Presentation di atas 4.80 HANYA boleh diberikan jika peak_velocity konsisten tinggi hingga step terakhir, hip_wobble hampir nol, dan head_yaw_aligned selalu true.
+5. Kihap (aturan WT): Kihap tidak dibuat atau salah momen adalah kesalahan mayor (-0.3) pada Accuracy, dan ikut menentukan Expression of Energy. Pakai kihap_wajib_jumlah dan kihap_wajib_gerakan dari JSON; jangan mengarang jumlah atau titik Kihap sendiri.
 
 DATA TELEMETRI JSON LOKAL:
 ${JSON.stringify(tel)}
