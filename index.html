@@ -2186,7 +2186,7 @@ document.addEventListener("change",e=>{
       toast("⚠️ "+T("Belum tersimpan","Not saved")+(x&&x.message?": "+x.message:"")+T(". Centang dikembalikan, silakan coba lagi.",". Checkbox reverted, please try again."));
     }
   });
-  (async()=>{try{const c=window.claude&&await claude.use("db");if(!c)return;db=c;let dq=false;const drawSoon=()=>{if(dq)return;dq=true;queueMicrotask(()=>{dq=false;const ghBusy=(cur==="ana"&&(anaState.busy||anaState.res))||cur==="upd"&&((document.getElementById("ghPkg")?.value||"").trim()||(document.getElementById("ghRes")?.innerHTML||"").trim()||(document.getElementById("verList")?.innerHTML||"").trim()||(document.getElementById("verRes")?.innerHTML||"").trim()||pendingLogoUri);if(!ghBusy&&!document.activeElement?.closest?.("#app input,#app textarea,#app select"))draw()})};const sub=(n,f)=>db.collection(n).onSnapshot(q=>{f(q.docs.map(d=>({id:d.id,...d.data()})));drawSoon()},()=>toast(T("Data belum bisa dimuat","Unable to load data")));sub("students",sync);sub("attendance",x=>A=x);sub("payments",x=>P=x);sub("leads",x=>Lz=x);sub("evaluations",x=>E=x);sub("coach_evaluations",x=>CE=x);sub("classes",x=>J=x);sub("coaches",x=>CList=x);sub("units",x=>UList=x);sub("pengumuman",x=>Um=x);draw()}catch(e){}})();
+  (async()=>{try{const c=window.claude&&await claude.use("db");if(!c)return;db=c;let dq=false;const drawSoon=()=>{if(dq)return;dq=true;queueMicrotask(()=>{dq=false;const ghBusy=(cur==="ana"&&(anaState.busy||anaState.res||window.__anaVid))||cur==="upd"&&((document.getElementById("ghPkg")?.value||"").trim()||(document.getElementById("ghRes")?.innerHTML||"").trim()||(document.getElementById("verList")?.innerHTML||"").trim()||(document.getElementById("verRes")?.innerHTML||"").trim()||pendingLogoUri);if(!ghBusy&&!document.activeElement?.closest?.("#app input,#app textarea,#app select"))draw()})};const sub=(n,f)=>db.collection(n).onSnapshot(q=>{f(q.docs.map(d=>({id:d.id,...d.data()})));drawSoon()},()=>toast(T("Data belum bisa dimuat","Unable to load data")));sub("students",sync);sub("attendance",x=>A=x);sub("payments",x=>P=x);sub("leads",x=>Lz=x);sub("evaluations",x=>E=x);sub("coach_evaluations",x=>CE=x);sub("classes",x=>J=x);sub("coaches",x=>CList=x);sub("units",x=>UList=x);sub("pengumuman",x=>Um=x);draw()}catch(e){}})();
   draw();
   const DCOL=["students","attendance","payments","leads","classes","evaluations","coach_evaluations","coaches","units","pengumuman"];
   const dlFile=async(name,text)=>{let dl=null;try{dl=window.claude?await claude.use("downloads"):null}catch(e){}if(dl){try{await dl.save({filename:name,data:text});return}catch(e){}}const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"application/json"}));a.download=name;document.body.appendChild(a);a.click();a.remove()};
@@ -2253,18 +2253,20 @@ document.addEventListener("change",e=>{
   }
   function plausible(L,W,H,opt){return !plausibleWhy(L,W,H,opt)}
   // Konfirmasi per subjek. step(t detik, ok) -> true bila data frame ini boleh dipakai (subjek sudah sah dan frame lolos).
+  // gap/lost opsional: kamera live memakai jeda yang menyesuaikan kecepatan AI di HP (lihat liveTrackStep)
   function poseConfirmer(){
     let streak=0,lastOk=-1e9,conf=false;
     return {
-      step(t,ok){
+      step(t,ok,gap,lost){
+        const G=gap||PG.confGap,LT=lost||PG.lostT;
         if(ok){
-          if(conf&&t-lastOk>PG.lostT)conf=false;
-          streak=(!conf&&t-lastOk>PG.confGap)?1:streak+1;lastOk=t;
+          if(conf&&t-lastOk>LT)conf=false;
+          streak=(!conf&&t-lastOk>G)?1:streak+1;lastOk=t;
           if(!conf&&streak>=PG.confN)conf=true;
           return conf;
         }
         streak=0;
-        if(conf&&t-lastOk>PG.lostT)conf=false;
+        if(conf&&t-lastOk>LT)conf=false;
         return false;
       },
       get confirmed(){return conf}
@@ -3353,7 +3355,7 @@ ${JSON.stringify(tel)}`;
     const chk=`<ul class="ux-chk"><li>${anaState.file?"✅":"⬜"} ${T("Video","Video")}</li><li>${(multi?(free?anaState.sel.length:anaCount())>0:(free||!!st))?"✅":"⬜"} ${T("Peserta","Participant")}</li></ul>`;
     const go=live?"":`<div class="sec"><div class="ux-step"><i>${isP?5:4}</i>${T("Mulai analisa","Start")}</div>${chips}${chk}<button class="btn ux-go" data-pm="go" ${busy||miss.length?"disabled":""}>${busy?"⏳ "+esc(msg):"🎥 "+T("Analisa Sekarang","Analyze Now")}</button>${miss.length&&!busy?`<p class="mu" style="margin:8px 0 0;font-size:13px;text-align:center">${T("Belum bisa mulai: ","Can't start yet: ")}${esc(miss.join(", "))}</p>`:""}${busy&&anaState.busy?`<p style="margin:10px 0 0;text-align:center"><button class="btn ghost dn" data-a="anaCancel">${T("Batal","Cancel")}</button></p>`:""}${err?`<p style="margin:10px 0 0"><span class="pill warn">${esc(err)}</span></p>`:""}</div>`;
     const liveErr=live&&pmState.err?`<div class="sec"><span class="pill warn">${esc(pmState.err)}</span></div>`:"";
-    const res=isP?pmResultsHtml():(free?fkHtml():origRes+anaMultiHtml());
+    const res=vidCardHtml()+(isP?pmResultsHtml():(free?fkHtml():origRes+anaMultiHtml()));
     const ghost=res&&anaState.lastLogId&&anaState.ghostSent!==anaState.lastLogId?`<p class="mu" style="margin:-4px 0 16px;font-size:13px;text-align:center">👻 ${T("Hasil aneh, atau ada kerangka di benda (botol, kursi, bayangan)?","Odd result, or a skeleton on an object (bottle, chair, shadow)?")} <button class="btn ghost" data-tl="ghost" style="padding:4px 12px;font-size:13px">${T("Laporkan","Report")}</button></p>`:"";
     return need()+intro+s1+s2+s3+s4+go+liveErr+`<div id="uxResults">${res}</div>`+ghost;
   };
@@ -3362,6 +3364,72 @@ ${JSON.stringify(tel)}`;
   try{const v=localStorage.getItem("ana_view");if(["depan","samping","belakang"].includes(v))pmState.view=v}catch(e){}
   window.__anaView=pmState.view;
   const liveState={active:false,starting:false,rec:false,stream:null,video:null,cv:null,wrap:null,lm:null,tracks:[],nextId:1,sel:{},bursts:[],t0:0,msg:"",err:"",hasMic:false,mic:{ring:[],on:false,start:0,last:0,pk:0,peak:0},loopT:0,micT:0,ac:null,an:null,buf:null,wake:null,offCount:0};
+  // ===== Rekam video AR dari kamera live: gambar kamera + kerangka/label + suara (Kihap ikut terekam) =====
+  // Video hanya disimpan di perangkat ini (unduh / simpan ke galeri), tidak pernah diunggah.
+  Object.assign(pmState,{recVid:(()=>{try{return localStorage.getItem("ana_recvid")!=="0"}catch(e){return true}})(),vid:null});
+  const VR={rec:null,chunks:[],cs:null,mic:null,raf:0,t0:0,done:null,audio:false};
+  function vrMime(audio){
+    const list=audio?['video/mp4;codecs=avc1,mp4a.40.2','video/mp4;codecs="avc1.42E01E, mp4a.40.2"','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/mp4','video/webm']:['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm'];
+    for(const m of list){try{if(MediaRecorder.isTypeSupported(m))return m}catch(e){}}return "";
+  }
+  function vrClear(){const x=pmState.vid;if(x&&x.url)try{URL.revokeObjectURL(x.url)}catch(e){}pmState.vid=null;window.__anaVid=false}
+  async function liveVidStart(){
+    const L=liveState,v=L.video;
+    if(!v||!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){toast(T("Browser ini tidak bisa merekam video. Pakai Chrome/Safari terbaru.","This browser cannot record video. Use a recent Chrome/Safari."));return}
+    vrClear();
+    // Poomsae: mikrofon yang sama dengan pendeteksi Kihap. Kyorugi/umum: mikrofon dinyalakan hanya selama merekam.
+    let aud=(L.stream?L.stream.getAudioTracks():[]).filter(t=>t.readyState==="live");
+    if(!aud.length){try{VR.mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:true},video:false});aud=VR.mic.getAudioTracks()}catch(e){VR.mic=null}}
+    if(!L.rec||!L.video){VR.mic&&VR.mic.getTracks().forEach(t=>t.stop());VR.mic=null;return}
+    const w=v.videoWidth||1280,h=v.videoHeight||720,sc=Math.min(1,1280/Math.max(w,h));
+    const cv=document.createElement("canvas");cv.width=Math.round(w*sc);cv.height=Math.round(h*sc);const cx=cv.getContext("2d");
+    const modeLbl=(UX_HELP[anaState.mode]||UX_HELP.umum)[0]+(anaState.mode==="poomsae"?" · "+pmState.jurus:"");
+    const paint=()=>{
+      if(!VR.rec)return;
+      try{
+        cx.drawImage(v,0,0,cv.width,cv.height);
+        if(L.cv&&L.cv.width)cx.drawImage(L.cv,0,0,cv.width,cv.height);
+        const fs=Math.max(14,Math.round(cv.height/30)),t=(performance.now()-VR.t0)/1000,txt="🥋 "+(window.__CLUB_NAME||"Dojang HQ")+" · "+modeLbl+" · "+String(Math.floor(t/60)).padStart(2,"0")+":"+String(Math.floor(t%60)).padStart(2,"0");
+        cx.font="700 "+fs+"px sans-serif";const tw=cx.measureText(txt).width;
+        cx.fillStyle="rgba(0,0,0,.55)";cx.fillRect(8,cv.height-fs-18,tw+16,fs+12);cx.fillStyle="#fff";cx.textBaseline="top";cx.fillText(txt,16,cv.height-fs-12);
+      }catch(e){}
+      VR.raf=requestAnimationFrame(paint);
+    };
+    const cs=cv.captureStream(30),mk=withAud=>{
+      const st=withAud?new MediaStream([...cs.getVideoTracks(),...aud]):cs,mime=vrMime(withAud),o={videoBitsPerSecond:25e5,...(withAud?{audioBitsPerSecond:128e3}:{})};
+      try{return new MediaRecorder(st,mime?{...o,mimeType:mime}:o)}catch(e){return new MediaRecorder(st)}
+    };
+    let withAud=aud.length>0,r=null;
+    try{r=mk(withAud)}catch(e){withAud=false;try{r=mk(false)}catch(e2){cs.getTracks().forEach(t=>t.stop());VR.mic&&VR.mic.getTracks().forEach(t=>t.stop());VR.mic=null;toast(T("Video tidak bisa direkam: ","Could not record video: ")+(e2.message||e2));return}}
+    Object.assign(VR,{rec:r,cs,chunks:[],t0:performance.now(),audio:withAud});
+    r.ondataavailable=e=>{if(e.data&&e.data.size)VR.chunks.push(e.data)};
+    VR.done=new Promise(res=>{r.onstop=res});
+    r.start(1000);paint();
+    if(!withAud)toast(T("Mikrofon tidak diizinkan: video direkam tanpa suara. Izinkan mikrofon untuk situs ini di pengaturan browser.","Microphone not allowed: recording without sound. Allow the microphone for this site in browser settings."));
+    draw();
+  }
+  // keep=false: buang rekaman (kamera dimatikan / rekaman dibatalkan)
+  async function liveVidStop(keep){
+    const r=VR.rec;if(!r)return null;
+    VR.rec=null;cancelAnimationFrame(VR.raf);
+    const dur=(performance.now()-VR.t0)/1000;
+    try{if(r.state!=="inactive")r.stop()}catch(e){}
+    await Promise.race([VR.done,new Promise(res=>setTimeout(res,5000))]);
+    try{VR.cs&&VR.cs.getTracks().forEach(t=>t.stop())}catch(e){}
+    try{VR.mic&&VR.mic.getTracks().forEach(t=>t.stop())}catch(e){}
+    VR.mic=null;VR.cs=null;
+    const chunks=VR.chunks;VR.chunks=[];
+    if(!keep||!chunks.length)return null;
+    const type=r.mimeType||"video/webm",blob=new Blob(chunks,{type}),d=new Date(),z=n=>String(n).padStart(2,"0");
+    const name=(anaState.mode||"latihan")+"-"+d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+"-"+z(d.getHours())+z(d.getMinutes())+(type.includes("mp4")?".mp4":".webm");
+    let share=false;try{share=!!(navigator.canShare&&navigator.canShare({files:[new File([blob],name,{type:type.split(";")[0]})]}))}catch(e){}
+    return {blob,url:URL.createObjectURL(blob),name,type,dur,audio:VR.audio,share};
+  }
+  function vidCardHtml(){
+    const x=pmState.vid;if(!x)return "";
+    const mm=String(Math.floor(x.dur/60)).padStart(2,"0")+":"+String(Math.floor(x.dur%60)).padStart(2,"0");
+    return `<div class="sec"><h2>🎬 ${T("Video latihan","Training video")} <span class="pill">${mm} · ${(x.blob.size/1048576).toFixed(1)} MB · ${x.audio?"🔊 "+T("dengan suara","with sound"):"🔇 "+T("tanpa suara","no sound")}</span></h2><video src="${x.url}" controls playsinline preload="metadata" style="width:100%;max-height:440px;border-radius:10px;background:#000;display:block"></video><p style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0">${x.share?`<button class="btn" data-pm="vidShare">📲 ${T("Simpan ke galeri / bagikan","Save to gallery / share")}</button>`:""}<button class="btn ${x.share?"ghost":""}" data-pm="vidDl">⬇️ ${T("Unduh","Download")}</button><button class="btn ghost dn" data-pm="vidDel">🗑 ${T("Hapus","Delete")}</button></p><p class="mu" style="font-size:12.5px;margin:6px 0 0">${T("Video hanya ada di perangkat ini dan hilang bila halaman ditutup, jadi simpan dulu. Tidak diunggah ke server.","The video only exists on this device and is lost when the page closes, so save it first. It is not uploaded.")}</p></div>`;
+  }
   const LIVE_SKEL=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
   const liveEl=id=>document.getElementById(id);
   // Sesuaikan bingkai dengan arah kamera sebenarnya (portrait atau landscape) supaya gambar tidak melar dan kotak orang tepat
@@ -3400,7 +3468,7 @@ ${JSON.stringify(tel)}`;
         if(L.sel[hit.id])delete L.sel[hit.id];else L.sel[hit.id]={name:"",sid:""};
         draw();
       });
-      Object.assign(L,{stream,video:v,cv,wrap,lm,tracks:[],nextId:1,sel:{},bursts:[],rec:false,autoSel:false});
+      Object.assign(L,{stream,video:v,cv,wrap,lm,tracks:[],nextId:1,sel:{},bursts:[],rec:false,autoSel:false,lastDetT:0,dtAvg:0});
       L.hasMic=stream.getAudioTracks().length>0;
       L.mic={ring:[],on:false,start:0,last:0,pk:0,peak:0};
       if(L.hasMic){
@@ -3421,6 +3489,7 @@ ${JSON.stringify(tel)}`;
   }
   function liveOff(){
     const L=liveState;
+    if(VR.rec)liveVidStop(false);
     clearTimeout(L.loopT);clearInterval(L.micT);
     try{L.stream&&L.stream.getTracks().forEach(t=>t.stop())}catch(e){}
     try{L.ac&&L.ac.close()}catch(e){}
@@ -3445,14 +3514,18 @@ ${JSON.stringify(tel)}`;
   // seen = orang ini sudah sah (8 frame berturut-turut lolos plausible()). Yang belum sah tidak digambar, tidak bisa dipilih, dan tidak direkam.
   function liveTrackStep(dets,now){
     const L=liveState,tr=L.tracks,pairs=[];
+    // HP lambat (mis. AI mode CPU ±1–2 frame/dtk): jeda antar frame bisa > 0.5 dtk, jadi konfirmasi 8 frame tidak pernah tercapai.
+    // Batas jeda mengikuti kecepatan AI di HP ini: minimal 0.5 dtk, atau 2.5x jeda rata-rata; batas hilang minimal 1.2 dtk atau 3x.
+    if(L.lastDetT){const d=now-L.lastDetT;if(d>0&&d<5)L.dtAvg=L.dtAvg?L.dtAvg*0.8+d*0.2:d}L.lastDetT=now;
+    const gap=Math.max(PG.confGap,2.5*(L.dtAvg||0)),lost=Math.max(PG.lostT,3*(L.dtAvg||0));
     tr.forEach((t,ti)=>dets.forEach((d,di)=>{
       const dist=Math.hypot(d.b.cx-t.b.cx,d.b.cy-t.b.cy)/Math.max(t.b.h,0.15),gate=0.9*(1+0.5*Math.min(t.miss,4));
       if(dist>gate)return;const ratio=d.b.h/Math.max(t.href,0.01);if(ratio<0.6||ratio>1.6)return;pairs.push([dist,ti,di]);
     }));
     pairs.sort((a,b)=>a[0]-b[0]);const ut=new Set(),ud=new Set();
-    for(const [,ti,di] of pairs){if(ut.has(ti)||ud.has(di))continue;ut.add(ti);ud.add(di);const t=tr[ti],d=dets[di];t.pts=d.pts;t.b=d.b;t.href=0.85*t.href+0.15*d.b.h;t.miss=0;t.seen=t.cf.step(now,true)}
-    tr.forEach((t,ti)=>{if(!ut.has(ti)){t.miss++;t.cf.step(now,false);t.seen=false;t.pts=null}});
-    dets.forEach((d,di)=>{if(ud.has(di)||tr.length>=12||d.b.h<0.12)return;const cf=poseConfirmer();tr.push({id:L.nextId++,b:d.b,href:d.b.h,miss:0,cf,seen:cf.step(now,true),pts:d.pts,fr:[],moveT:0,frozen:false})});
+    for(const [,ti,di] of pairs){if(ut.has(ti)||ud.has(di))continue;ut.add(ti);ud.add(di);const t=tr[ti],d=dets[di];t.pts=d.pts;t.b=d.b;t.href=0.85*t.href+0.15*d.b.h;t.miss=0;t.seen=t.cf.step(now,true,gap,lost)}
+    tr.forEach((t,ti)=>{if(!ut.has(ti)){t.miss++;t.cf.step(now,false,gap,lost);t.seen=false;t.pts=null}});
+    dets.forEach((d,di)=>{if(ud.has(di)||tr.length>=12||d.b.h<0.12)return;const cf=poseConfirmer();tr.push({id:L.nextId++,b:d.b,href:d.b.h,miss:0,cf,seen:cf.step(now,true,gap,lost),pts:d.pts,fr:[],moveT:0,frozen:false})});
     L.tracks=tr.filter(t=>t.miss<40||L.sel[t.id]);
   }
   function liveRecord(t){
@@ -3527,13 +3600,14 @@ ${JSON.stringify(tel)}`;
       if(ids.some(id=>{const s=S.find(x=>x.id===L.sel[id].sid);return !s||!s.foto}))return toast(T("Ada murid tanpa izin foto/video","A student has no photo/video consent"));
     }
     pmReset();anaState.multi=null;anaState.res=null;anaState.err="";L.tracks.forEach(t=>{t.fr=[];t.moveT=0;t.frozen=false;t.anc=null});L.bursts=[];L.t0=performance.now()/1000;L.rec=true;draw();
+    if(pmState.recVid)liveVidStart();
   }
   async function liveFinish(){
     const L=liveState;if(!L.rec)return;
     L.rec=false;
-    const dur=performance.now()/1000-L.t0;
+    const dur=performance.now()/1000-L.t0,vidP=liveVidStop(true),vidSet=async()=>{const x=await vidP;if(x){pmState.vid=x;window.__anaVid=true}};
     const picks=Object.keys(L.sel).map(id=>({id:+id,tr:L.tracks.find(x=>x.id===+id),cfg:L.sel[id]})).filter(x=>x.tr);
-    if(dur<3||!picks.length){pmState.err=T("Rekaman terlalu pendek (minimal 3 detik) atau peserta hilang dari layar.","Recording too short (at least 3 seconds) or participants left the frame.");liveOff();draw();return}
+    if(dur<3||!picks.length){await vidSet();pmState.err=T("Rekaman terlalu pendek (minimal 3 detik) atau peserta hilang dari layar.","Recording too short (at least 3 seconds) or participants left the frame.");liveOff();draw();return}
     const stubOf=p=>pmState.free?{id:"",_n:String(p.cfg.name||"").trim()||T("Orang #","Person #")+p.id,b:""}:S.find(x=>x.id===p.cfg.sid);
     if(anaState.mode!=="poomsae"){ // Kyorugi / Latihan umum: penilaian sama seperti unggah video
       const mode=anaState.mode;
@@ -3542,7 +3616,7 @@ ${JSON.stringify(tel)}`;
       techLog("ana",{mode,src:"live",multi:out.length>1,view:pmState.view,dur:Math.round(dur*10)/10,subs:out.slice(0,4).map(o=>({ok:!o.error,err:o.error?String(o.error).slice(0,120):""}))}).then(tlKeep);
       if(pmState.free)pmState.fk=out.map(o=>({name:o.st._n,result:o.result,error:o.error}));
       else{try{await anaSaveOut(out.filter(o=>o.st&&o.st.id),mode)}catch(err){anaState.err=err.message||String(err)}if(anaState.err){pmState.err=anaState.err;anaState.err=""}}
-      draw();uxScroll();return;
+      await vidSet();draw();uxScroll();return;
     }
     const first=picks.map(p=>{try{return pmTelemetry(p.tr.fr,dur,pmOpts(null)).peaksT}catch(e){return []}});
     const audio=!L.hasMic?null:(!L.bursts.length&&L.mic.peak<0.005?{silent:true,bursts:[]}:{silent:false,bursts:L.bursts});
@@ -3551,7 +3625,7 @@ ${JSON.stringify(tel)}`;
     techLog("ana",{mode:"poomsae",src:"live",multi:picks.length>1,view:pmState.view,dur:Math.round(dur*10)/10,subs:pmState.multi.slice(0,4).map(x=>({ok:!!x.rep,err:x.rep?"":String(x.error||"").slice(0,120)}))}).then(tlKeep);
     liveOff();
     if(!pmState.free)await pmAutoSave(pmState.multi.filter(x=>x.rep&&x.st&&x.st.id).map(x=>({st:x.st,rep:x.rep})));
-    draw();uxScroll();
+    await vidSet();draw();uxScroll();
   }
   function liveCardHtml(){
     const L=liveState,free=pmState.free,ids=Object.keys(L.sel),portrait=false,isP=anaState.mode==="poomsae",isK=anaState.mode==="kyorugi";
@@ -3559,17 +3633,19 @@ ${JSON.stringify(tel)}`;
     if(L.starting)b+=`<p class="mu" id="liveMsg" style="margin:0">${esc(L.msg||"...")}</p>`;
     else if(!L.active){
       if(pmState.multi||pmState.rep)b+=""; 
-      b+=`<p class="mu" style="margin:0 0 10px;font-size:13px">${isP?T("Kamera menilai langsung beberapa peserta sekaligus. Video tidak direkam atau diunggah, hanya titik gerak tubuh dan suara Kihap dibaca di perangkat ini.","The camera scores several participants at once. Video is not recorded or uploaded; only body points and Kihap sound are read on this device."):T("Kamera menilai langsung beberapa peserta sekaligus (tinggi tendangan, kuda-kuda"+(isK?", guard, dan jumlah tendangan":"")+"). Video tidak direkam atau diunggah, hanya titik gerak tubuh dibaca di perangkat ini.","The camera scores several participants at once (kick height, stance"+(isK?", guard and kick count":"")+"). Video is not recorded or uploaded; only body points are read on this device.")}</p><button class="btn" data-pm="liveOn">📷 ${T("Nyalakan kamera","Turn on camera")}</button>`;
+      b+=`<p class="mu" style="margin:0 0 10px;font-size:13px">${isP?T("Kamera menilai langsung beberapa peserta sekaligus. Video tidak diunggah: titik gerak tubuh dan suara Kihap dibaca di perangkat ini. Video latihan bisa disimpan di perangkat bila dicentang.","The camera scores several participants at once. Video is not uploaded: body points and Kihap sound are read on this device. The training video can be saved on the device if ticked."):T("Kamera menilai langsung beberapa peserta sekaligus (tinggi tendangan, kuda-kuda"+(isK?", guard, dan jumlah tendangan":"")+"). Video tidak diunggah: titik gerak tubuh dibaca di perangkat ini. Video latihan bisa disimpan di perangkat bila dicentang.","The camera scores several participants at once (kick height, stance"+(isK?", guard and kick count":"")+"). Video is not uploaded: body points are read on this device. The training video can be saved on the device if ticked.")}</p><button class="btn" data-pm="liveOn">📷 ${T("Nyalakan kamera","Turn on camera")}</button>`;
     }else{
       b+=`<div id="liveHost"></div>`;
       b+=isP?`<div style="margin:8px 0;height:6px;background:var(--ln);border-radius:4px;overflow:hidden"><div id="liveMic" style="height:100%;width:0;background:#1E7B4F"></div></div><p class="mu" style="margin:0 0 8px;font-size:12.5px">${L.hasMic?"🎤 "+T("level suara (Kihap dibaca dari sini)","sound level (Kihap is read from this)"):"⚠ "+T("Mikrofon tidak aktif: Kihap tidak terbaca, pakai koreksi manual di Pengaturan.","Microphone not active: Kihap not readable, use the manual override in Settings.")} · 👥 <span id="liveSeen">0</span> ${T("terdeteksi","detected")}${L.rec?` · ⏺ <b id="liveTimer">00:00</b> · 🗣️ <b id="liveKihap">0</b> Kihap`:""}</p>`:`<p class="mu" style="margin:8px 0;font-size:12.5px">👥 <span id="liveSeen">0</span> ${T("terdeteksi","detected")} · 📐 ${T("Sudut","Angle")}: ${esc(viewLbl(pmState.view))}${L.rec?` · ⏺ <b id="liveTimer">00:00</b>`:""}</p>`;
       b+=L.rec?"":`<p class="mu" style="margin:0 0 8px;font-size:13px">${T("Kalau hanya 1 orang di layar, otomatis terpilih. Untuk beberapa orang, ketuk kotak tiap peserta lalu isi namanya.","If only 1 person is on screen they are selected automatically. For several people, tap each participant's box and fill in their names.")}</p>`;
       b+=ids.map(id=>{const c=ANA_COL[(id-1)%ANA_COL.length],cfg=L.sel[id];return `<div class="row" style="gap:8px;flex-wrap:wrap"><span style="display:flex;align-items:center;gap:8px;flex:1;min-width:220px"><b style="color:${c}">#${id}</b>${free?`<input data-livename="${id}" value="${esc(cfg.name||"")}" maxlength="40" placeholder="${T("Nama peserta (bebas diisi)","Participant name (free text)")}" style="flex:1" ${L.rec?"disabled":""}>`:`<select data-livesel="${id}" style="flex:1" ${L.rec?"disabled":""}><option value="">— ${T("pilih murid","choose student")} —</option>${anaOptsHtml(cfg.sid||"")}</select>`}</span>${L.rec?"":`<button type="button" class="btn ghost dn" data-pm="liveRm" data-id="${id}">✕</button>`}</div>`}).join("");
+      b+=L.rec?(VR.rec?`<p class="mu" style="margin:8px 0 0;font-size:12.5px">🎬 ${T("Video sedang direkam (kerangka + suara)","Recording video (skeleton + sound)")}</p>`:""):`<label style="display:flex;gap:8px;align-items:center;margin:10px 0 0;font-size:13.5px;cursor:pointer"><input type="checkbox" id="liveVidChk" style="width:auto;margin:0" ${pmState.recVid?"checked":""}> 🎬 ${T("Simpan video latihan (kerangka + suara, hanya di perangkat ini)","Save training video (skeleton + sound, on this device only)")}</label>`;
       b+=`<p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap">${L.rec?`<button class="btn dn" data-pm="liveFin">⏹ ${T("Selesai & nilai","Finish & score")}</button>`:`<button class="btn" data-pm="liveRec">⏺ ${T("Mulai rekam","Start")} ${ids.length?"("+ids.length+" "+T("orang","people")+")":""}</button><button class="btn ghost" data-pm="liveOff">${T("Matikan kamera","Turn off camera")}</button>`}</p>`;
     }
     if(L.err)b+=`<p style="margin:10px 0 0"><span class="pill warn">${esc(L.err)}</span></p>`;
     return `<div class="sec"><div class="ux-step"><i>2</i>📷 ${T("Kamera live","Live camera")} · ${esc((UX_HELP[anaState.mode]||UX_HELP.umum)[0])}</div>${b}</div>`;
   }
+  document.addEventListener("change",e=>{if(e.target&&e.target.id==="liveVidChk"){pmState.recVid=e.target.checked;try{localStorage.setItem("ana_recvid",pmState.recVid?"1":"0")}catch(x){}}});
   document.addEventListener("input",e=>{const t=e.target;if(t.dataset&&t.dataset.livename!==undefined){const x=liveState.sel[t.dataset.livename];if(x)x.name=t.value.slice(0,40)}});
   document.addEventListener("change",e=>{
     const t=e.target;
@@ -3615,6 +3691,9 @@ ${JSON.stringify(tel)}`;
     if(a==="liveOff"){liveOff();pmState.err="";liveState.err="";return draw();}
     if(a==="liveRec")return liveRec();
     if(a==="liveFin")return liveFinish();
+    if(a==="vidDl"&&pmState.vid){const x=pmState.vid,el=document.createElement("a");el.href=x.url;el.download=x.name;document.body.appendChild(el);el.click();el.remove();return}
+    if(a==="vidShare"&&pmState.vid){const x=pmState.vid;try{await navigator.share({files:[new File([x.blob],x.name,{type:x.type.split(";")[0]})]})}catch(err){if(err&&err.name!=="AbortError")toast(T("Gagal membagikan, pakai tombol Unduh.","Sharing failed, use Download."))}return}
+    if(a==="vidDel"){if(confirm(T("Hapus video ini dari layar? Video yang belum disimpan akan hilang.","Remove this video? Unsaved video will be lost."))){vrClear();draw()}return}
     if(a==="liveRm"){delete liveState.sel[b.dataset.id];return draw();}
     if(a==="go")return uxGo();
     if(a==="reload"){anaState.pickOn=true;anaState.sel=[];anaState.multi=null;return anaPreview(anaState.prevT);}
@@ -3806,5 +3885,5 @@ ${JSON.stringify(tel)}`;
   window.addEventListener("online",function(){if(typeof toast==="function")toast(tx("Kembali online","Back online"))});
 })();
 </script><script>document.addEventListener("click",function(e){if(e.target.closest&&e.target.closest("[data-champ]"))location.href="/champion?pelatih=1"});</script><style>#appVer{position:fixed;left:6px;bottom:2px;z-index:2147483000;font:700 9px/1 system-ui,-apple-system,sans-serif;letter-spacing:.3px;color:#fff;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.3);padding:2px 5px;border-radius:999px;pointer-events:none;user-select:none}</style>
-<style>@media (max-width:760px){body:not(.standalone-portal) #appVer{bottom:calc(72px + env(safe-area-inset-bottom,0px))}}</style><style>.btn:disabled{opacity:.45;cursor:not-allowed}</style><div id="appVer" aria-hidden="true">v8</div>
+<style>@media (max-width:760px){body:not(.standalone-portal) #appVer{bottom:calc(72px + env(safe-area-inset-bottom,0px))}}</style><style>.btn:disabled{opacity:.45;cursor:not-allowed}</style><div id="appVer" aria-hidden="true">v9</div>
 </body></html>

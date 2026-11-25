@@ -4,7 +4,7 @@
 // - Champion (/champion) punya salinan sendiri.
 // - Ikon & font: dari cache dulu (jarang berubah), diperbarui diam-diam di belakang.
 // - /api/ tidak pernah di-cache (data selalu langsung dari server).
-const CACHE = "dojang-v8";
+const CACHE = "dojang-v9";
 const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
 
