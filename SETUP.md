@@ -92,3 +92,10 @@ Data: koleksi `invoices` (tagihan) dan `billing_settings` (pengaturan) tidak iku
 
 ## 📖 Panduan video
 Video cara memakai fitur ada di folder `panduan/` dan bisa dibuka tanpa login di `/?panduan=1` (juga lewat menu **📖 Panduan** untuk admin klub dan Super Admin, tautan di layar masuk, dan tombol di Portal Orang Tua serta Champion). Video direkam otomatis dari aplikasi asli dengan data contoh memakai skrip di folder `tools-panduan/` (lihat `tools-panduan/README.md`); rekam ulang bila tampilan aplikasi berubah.
+
+## 🧠 Log teknis & penyetelan otomatis (Analisa Video)
+- Tiap analisa video mengirim log anonim ke `/api/techlog`: angka titik tubuh (13 titik, tanpa gambar, nama, atau ID murid), penyebab frame ditolak, dan hasil analisa. Error aplikasi (maks. 5 per sesi) juga dicatat. Kamera live hanya mengirim ringkasan.
+- Menu Super Admin **🧠 Log Teknis & Penyetelan**: satu klik **Pelajari log & setel otomatis** menguji ulang rekaman di log dengan berbagai ambang penyaring, memilih ambang terbaik dalam batas aman, menerapkannya ke semua klien, lalu menghapus log yang sudah dipakai. **Kembalikan setelan sebelumnya** membatalkannya.
+- Batas aman (`BOUNDS` di `functions/api/techlog.js` = `PG_BOUNDS` di `index.html`) menjaga supaya kerangka di benda tetap tertolak. Laporan "kerangka di benda" dari pelatih membuat ambang dikencangkan kembali, bukan dilonggarkan.
+- Error kode tidak bisa diperbaiki otomatis: pakai **Salin ringkasan untuk Claude**, lalu tempel ke sesi Claude.
+- Log disimpan maks. 60 hari (dan maks. 400 log terbaru). Koleksi `techlog` dan `pose_cfg` tidak ikut sinkron data klub dan tidak bisa diubah lewat API umum.
