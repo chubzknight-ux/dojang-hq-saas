@@ -262,6 +262,104 @@ let SM={};const sm=(k,v,a=0.35)=>SM[k]=(SM[k]==null?v:SM[k]+(v-SM[k])*a);
 const BOTH=[[11,12,23,24,25,26,27,28]];
 const ONESIDE=[[11,23,25,27],[12,24,26,28]];
 
+/* ==CHAMP-GUARD-START== (diuji oleh tests/champion-guard.test.js: blok ini tidak boleh memakai variabel dari luar)
+   Penyaring "kerangka hantu" (MediaPipe kadang menggambar pose di botol, kursi, tas, tiang, bayangan).
+   Versi Champion TIDAK bergantung arah badan: plank, push-up, sit-up, bridge, superman (berbaring), kupu-kupu dan
+   jerapah (duduk), lunge (berlutut) semuanya sah. Karena itu aturan "pinggul di bawah bahu" dan "hidung di atas bahu"
+   diganti cek yang berlaku di posisi apa pun: kepala menempel di ujung bahu, dan badan tidak terbalik (kepala di bawah,
+   pinggul jauh di atas). HP sering di samping badan, jadi cukup satu sisi badan (bahu + pinggul + kaki) yang jelas. */
+const CG={
+  coreV:0.5,coreVLow:0.4,   // bahu & pinggul satu sisi badan (latihan dengan thr < 0.5 memakai nilai rendah)
+  meanV:0.6,meanVLow:0.5,   // rata-rata visibility rantai sisi terbaik: bahu, siku, pergelangan, pinggul, lutut, pergelangan kaki
+  minTorso:0.05,            // torso minimal 5% diagonal frame (setara ±6% tinggi frame portrait, berlaku juga untuk berbaring)
+  minSpan:0.2,              // badan (kepala sampai kaki) minimal 20% diagonal frame
+  maxShW:1.8,               // lebar bahu maks 1.8 x torso (tanpa batas bawah: HP di samping)
+  headMax:1.2,headBack:0.1, // hidung maks 1.2 x torso dari bahu dan tidak berada di antara bahu & pinggul
+  invNose:0.3,invHip:0.5,   // terbalik: hidung > 0.3 x torso di bawah bahu DAN pinggul > 0.5 x torso di atas bahu
+  maxArm:1.4,maxLegSeg:1.7,segV:0.3,
+  legV:0.5,legVLow:0.4,     // minimal satu kaki lengkap (lutut & pergelangan kaki)
+  minLeg:0.8,               // paha + betis minimal 0.8 x torso
+  confN:8,confGap:0.5,lostT:1.2,
+  vMax:80,                  // titik tubuh pindah > 80 torso/dtk antar frame = loncatan tracking, frame dibuang
+  mv:0.12                   // gerakan baru dihitung bila titik tubuh pindah minimal 0.12 x torso dari titik awal (bisa diatur per latihan)
+};
+// L = landmark MediaPipe (x,y 0..1, visibility), W/H = ukuran video (piksel), thr = ambang visibility latihan (EX[..].thr)
+function champOk(L,W,H,thr){
+  if(!L||L.length<29||!(W>0)||!(H>0))return false;
+  const low=(thr==null?0.5:thr)<0.5;
+  const v=i=>{const q=L[i];if(!q)return 0;const x=q.visibility!==undefined?q.visibility:q.v;return x==null?1:(typeof x==="number"&&isFinite(x)?x:0)}; // sama seperti frame(): visibility kosong = 1
+  const P=i=>({x:L[i].x*W,y:L[i].y*H}),d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+  const diag=Math.hypot(W,H),cv=low?CG.coreVLow:CG.coreV;
+  const sides=[[11,13,15,23,25,27],[12,14,16,24,26,28]];
+  const okS=sides.map(s=>v(s[0])>=cv&&v(s[3])>=cv);
+  if(!okS[0]&&!okS[1])return false;
+  const best=sides.map(s=>s.reduce((a,i)=>a+v(i),0)),bs=best[0]>=best[1]?0:1;
+  if(best[bs]/6<(low?CG.meanVLow:CG.meanV))return false;
+  const both=okS[0]&&okS[1];
+  const sh=both?mid(P(11),P(12)):P(sides[okS[0]?0:1][0]),hp=both?mid(P(23),P(24)):P(sides[okS[0]?0:1][3]),tor=d(sh,hp);
+  if(!(tor>=CG.minTorso*diag))return false;
+  if(v(11)>CG.segV&&v(12)>CG.segV&&d(P(11),P(12))>CG.maxShW*tor)return false;
+  if(v(0)>=0.5){
+    const n=P(0),ax={x:(sh.x-hp.x)/tor,y:(sh.y-hp.y)/tor};
+    if(d(n,sh)>CG.headMax*tor)return false;
+    if((n.x-sh.x)*ax.x+(n.y-sh.y)*ax.y<-CG.headBack*tor)return false;
+    if(n.y>sh.y+CG.invNose*tor&&hp.y<sh.y-CG.invHip*tor)return false;
+  }
+  const long=(a,b,mx)=>v(a)>CG.segV&&v(b)>CG.segV&&d(P(a),P(b))>mx*tor;
+  if([[11,13],[13,15],[12,14],[14,16]].some(s=>long(s[0],s[1],CG.maxArm)))return false;
+  if([[23,25],[25,27],[24,26],[26,28]].some(s=>long(s[0],s[1],CG.maxLegSeg)))return false;
+  const lv=low?CG.legVLow:CG.legV,legs=[[23,25,27],[24,26,28]].filter(g=>v(g[1])>lv&&v(g[2])>lv);
+  if(!legs.length)return false;
+  if(Math.max(...legs.map(g=>d(P(g[0]),P(g[1]))+d(P(g[1]),P(g[2]))))<CG.minLeg*tor)return false;
+  const pts=[0,11,12,23,24,25,26,27,28].filter(i=>v(i)>CG.segV).map(P),xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
+  if(Math.hypot(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys))<CG.minSpan*diag)return false;
+  return true;
+}
+// Konfirmasi: subjek sah setelah 8 frame berturut-turut lolos (jeda maks 0.5 dtk); hilang > 1.2 dtk = konfirmasi ulang
+function champConfirmer(){
+  let streak=0,lastOk=-1e9,conf=false;
+  return {
+    step(t,ok){
+      if(ok){
+        if(conf&&t-lastOk>CG.lostT)conf=false;
+        streak=(!conf&&t-lastOk>CG.confGap)?1:streak+1;lastOk=t;
+        if(!conf&&streak>=CG.confN)conf=true;
+        return conf;
+      }
+      streak=0;if(conf&&t-lastOk>CG.lostT)conf=false;return false;
+    },
+    get confirmed(){return conf}
+  };
+}
+// P = titik piksel {x,y,v}; panjang torso yang tahan posisi menyamping
+function champTor(P){
+  const s=[[11,23],[12,24]].filter(g=>P[g[0]].v>0.3&&P[g[1]].v>0.3);
+  if(s.length===2)return Math.hypot((P[11].x+P[12].x-P[23].x-P[24].x)/2,(P[11].y+P[12].y-P[23].y-P[24].y)/2);
+  return s.length?Math.hypot(P[s[0][0]].x-P[s[0][1]].x,P[s[0][0]].y-P[s[0][1]].y):0;
+}
+// Gerbang kinematik. ids = titik tubuh latihan (EX[..].need), thr = ambang visibility latihan.
+// jump(): true bila ada titik yang meloncat > CG.vMax torso/dtk dari frame sah sebelumnya.
+// track()/rep(): gerakan baru dihitung bila salah satu titik sudah berpindah minimal mv x torso dari titik awalnya.
+function champKin(ids,thr,mv){
+  const th=thr==null?0.5:thr,minMv=mv==null?CG.mv:mv;let last=null,lastT=0,start=null,maxD=0;
+  const okp=p=>p&&p.v>th;
+  return {
+    jump(P,t){
+      const tor=champTor(P);if(!last||!(tor>0))return false;
+      const dt=t-lastT;if(!(dt>0)||dt>CG.confGap)return false;
+      return ids.some(i=>okp(P[i])&&okp(last[i])&&Math.hypot(P[i].x-last[i].x,P[i].y-last[i].y)/tor/dt>CG.vMax);
+    },
+    track(P,t){
+      last=P;lastT=t;const tor=champTor(P);if(!(tor>0))return;
+      if(!start){start={};ids.forEach(i=>{if(okp(P[i]))start[i]={x:P[i].x,y:P[i].y}});return}
+      ids.forEach(i=>{if(!okp(P[i]))return;if(!start[i]){start[i]={x:P[i].x,y:P[i].y};return}maxD=Math.max(maxD,Math.hypot(P[i].x-start[i].x,P[i].y-start[i].y)/tor)});
+    },
+    rep(P){const ok=maxD>=minMv;start=null;maxD=0;if(P)this.track(P,lastT);return ok},
+    get moved(){return maxD}
+  };
+}
+/* ==CHAMP-GUARD-END== */
+
 /* ---------- 12 latihan ---------- */
 const EX={
 /* ===== KEKUATAN ===== */
@@ -589,7 +687,7 @@ lari:{cat:'kuat',name:'Lari Lutut Tinggi',emoji:'🏃',mode:'reps',def:20,view:'
     const good=top>=70;
     return {good,neutral:top<40,cue:good?'Cepat! Ganti kaki!':top>=40?'Lutut lebih tinggi!':'Angkat lutut bergantian!',meter:clamp(top/100,0,1),line:0.7,labels,info:`Lutut ${top|0}°`,q:good?clamp(top/100,0.5,1):0.3,rep};
   }},
-jinjit:{cat:'kuat',name:'Jinjit Kelinci',emoji:'🐰',mode:'reps',def:15,view:'HP di SAMPING',desc:'Jinjit naik-turun. Betis kuat, lompatan dan tendangan makin pegas!',
+jinjit:{cat:'kuat',name:'Jinjit Kelinci',emoji:'🐰',mode:'reps',def:15,mv:0.06,view:'HP di SAMPING',desc:'Jinjit naik-turun. Betis kuat, lompatan dan tendangan makin pegas!',
   tips:['Taruh HP di SAMPING kamu, 2 langkah besar, kaki harus kelihatan jelas','Berdiri tegak, boleh pegangan tembok','Naik jinjit setinggi mungkin, lalu turun pelan','Lutut tetap lurus ya'],
   need:[[23,25,27,29,31],[24,26,28,30,32]],bestLabel:'Jinjit tertinggi',fmtBest:v=>`${Math.round(v*100)} poin`,
   eval(P,S){
@@ -776,11 +874,15 @@ function frame(){
   cx.clearRect(0,0,W,H);
   const dt=S.lastT?Math.min(0.25,(now-S.lastT)/1000):0;S.lastT=now;
   const raw=res&&res.landmarks&&res.landmarks[0],e=EX[cur],thr=e.thr||0.5;
+  // penyaring kerangka hantu: deteksi yang tidak masuk akal secara anatomi tidak digambar dan tidak dihitung;
+  // yang masuk akal baru dipakai setelah sah 8 frame berturut-turut; frame dengan loncatan tracking dibuang
   let P=null,visible=false;
-  if(raw){
+  const plaus=!!raw&&champOk(raw,W,H,thr),conf=S.cf.step(now/1000,plaus);
+  if(plaus){
     P=raw.map(p=>({x:p.x*W,y:p.y*H,v:p.visibility==null?1:p.visibility}));
-    visible=e.need.some(set=>set.every(i=>P[i].v>thr&&raw[i].x>-0.02&&raw[i].x<1.02&&raw[i].y>-0.02&&raw[i].y<1.02));
-    lastP=P;
+    visible=conf&&e.need.some(set=>set.every(i=>P[i].v>thr&&raw[i].x>-0.02&&raw[i].x<1.02&&raw[i].y>-0.02&&raw[i].y<1.02));
+    if(visible&&S.kin.jump(P,now/1000))visible=false;
+    else if(visible){S.kin.track(P,now/1000);lastP=P;}
   }
   if(S.phase==='pos'){
     if(P)drawSkel(cx,P,W,mirror,'#ffffffaa');
@@ -817,7 +919,7 @@ function frame(){
       else if(m>S.mile&&left>5){S.mile=m;say(`${m*10} detik`,true);}
     }else if(o.cue&&!o.neutral)S.faults[o.cue]=(S.faults[o.cue]||0)+dt;
     if(S.goodT>=S.target){updHud();say('Selesai! Kamu hebat!',true);beep(true,0.4);return finish();}
-  }else if(o.rep){
+  }else if(o.rep&&S.kin.rep(P)){ // gerbang kinematik: gerakan dihitung hanya bila badan benar-benar berpindah (getaran di tempat tidak)
     S.reps.push(o.rep);
     const g=S.reps.filter(r=>r.good).length;
     beep(o.rep.good);flash(o.rep.good);
@@ -900,7 +1002,7 @@ async function start(){
   setOv('🤖 Memuat AI…');
   try{lm=await loadModel(modelType());}
   catch(err){stopCam();setOv('Gagal memuat AI. Cek internet lalu coba lagi.');$('#ovBtn').style.display='block';return;}
-  SM={};S=newSession(target);lastVT=-1;setOv('');
+  SM={};S=newSession(target);S.cf=champConfirmer();S.kin=champKin([...new Set(e.need.flat())],e.thr||0.5,e.mv);lastVT=-1;lastP=null;setOv('');
   running=true;wake();updHud();requestAnimationFrame(frame);
 }
 function stopRun(){running=false;stopCam();unwake();try{speechSynthesis.cancel()}catch(e){}}
@@ -1153,6 +1255,6 @@ if(qs.has('pelatih')){$('#cTgl').value=tglLokal();coachLoad();}
 else bootKid();
 </script>
 <style>#appVer{position:fixed;left:6px;bottom:2px;z-index:2147483000;font:700 9px/1 system-ui,-apple-system,sans-serif;letter-spacing:.3px;color:#fff;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.3);padding:2px 5px;border-radius:999px;pointer-events:none;user-select:none}</style>
-<div id="appVer" aria-hidden="true">v4</div>
+<div id="appVer" aria-hidden="true">v5</div>
 </body>
 </html>
