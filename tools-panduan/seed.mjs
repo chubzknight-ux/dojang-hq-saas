@@ -31,9 +31,9 @@ async function seedWith(base, H) {
   await put(base, H, "units", "utama", { name: "Utama" });
   await put(base, H, "units", "cabang-timur", { name: "Cabang Timur" });
   await put(base, H, "coaches", "sabeum-andi", { name: "Sabeum Andi", bio: "Sabuk hitam Dan 3, pelatih sejak 2015", wa: "081211112222" });
-  await put(base, H, "classes", "k1", { unit: "Utama", h: "Selasa & Kamis", j: "16.00–17.30", l: "GOR Kota", p: "Sabeum Andi" });
-  await put(base, H, "classes", "k2", { unit: "Utama", h: "Sabtu", j: "08.00–09.30", l: "GOR Kota", p: "Sabeum Andi" });
-  await put(base, H, "classes", "k3", { unit: "Cabang Timur", h: "Rabu", j: "15.30–17.00", l: "Aula SD Timur", p: "Sabeum Andi" });
+  await put(base, H, "classes", "k1", { cids: ["sabeum-andi"], unit: "Utama", h: "Selasa & Kamis", j: "16.00–17.30", l: "GOR Kota", p: "Sabeum Andi" });
+  await put(base, H, "classes", "k2", { cids: ["sabeum-andi"], unit: "Utama", h: "Sabtu", j: "08.00–09.30", l: "GOR Kota", p: "Sabeum Andi" });
+  await put(base, H, "classes", "k3", { cids: ["sabeum-andi"], unit: "Cabang Timur", h: "Rabu", j: "15.30–17.00", l: "Aula SD Timur", p: "Sabeum Andi" });
   return { kids };
 }
 

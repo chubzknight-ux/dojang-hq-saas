@@ -246,7 +246,7 @@ if (SAAS) S["10-unit-sekolah-dan-naik-kelas"] = async () => {
   const p = rc.page;
   await p.goto(base + "/"); await p.waitForSelector(NAV("jad")); await sleep(900);
   await go(p, "jad", 900);
-  await cap(p, "Menu Jadwal & Unit: untuk dojang yang melatih di sekolah (ekskul), centang “Unit sekolah” pada unitnya", "UNIT SEKOLAH", 3800);
+  await cap(p, "Menu Jadwal & Unit: untuk dojang yang melatih di sekolah (ekskul), ubah “Tipe unit” menjadi “Unit sekolah”", "UNIT SEKOLAH", 3800);
   await cap(p, "Atur kelas tertinggi di sekolah itu (bawaan 6 untuk SD). Murid di kelas tertinggi akan menjadi “Lulus”", null, 3800);
   await go(p, "mur", 900);
   await cap(p, "Di daftar Murid, kelas tampil sebagai label 🏫. Pilih unit sekolah di kiri atas untuk melihatnya", "KELAS MURID", 3400);
