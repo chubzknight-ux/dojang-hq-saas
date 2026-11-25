@@ -203,6 +203,68 @@ S["09-penilaian-dan-laporan"] = async () => {
   return rc;
 };
 
+
+// 11) Latihan TC (program latihan tambahan, khusus SaaS). Dijalankan SEBELUM video 10 supaya data contoh masih bersih.
+if (SAAS) S["11-latihan-tc"] = async () => {
+  const rc = await newRec(browser, { ...D, init: adminInit });
+  const p = rc.page;
+  await p.goto(base + "/"); await p.waitForSelector(NAV("tc")); await sleep(900);
+  await go(p, "tc", 900);
+  await cap(p, "Menu Latihan TC: sesi latihan tambahan untuk murid pilihan, mis. persiapan kejuaraan. Pesertanya boleh dari unit mana saja", "LATIHAN TC", 4600);
+  await tap(p, "button[data-a=tcNew]", { after: 700 });
+  await typeIn(p, "#tcNama", "TC Kejurda 2026", { delay: 60 });
+  await p.fill("#tcMulai", "2026-11-01"); await p.fill("#tcSampai", "2026-12-20");
+  await typeIn(p, "#tcHari", "Senin & Jumat", { delay: 45 });
+  await typeIn(p, "#tcJam", "19.00–21.00", { delay: 45 });
+  await typeIn(p, "#tcLok", "GOR Kota", { delay: 45 });
+  await cap(p, "Isi nama program, periode, hari, jam, dan lokasi", null, 3000);
+  // peserta dari dua unit berbeda (Utama + Cabang Timur)
+  for (const id of ["alya-putri", "raka-pratama", "kevin-santoso"]) await tap(p, `input[data-tcp=${id}]`, { after: 450 });
+  await cap(p, "Centang pesertanya. Murid dari unit berbeda boleh digabung. Gunakan kotak cari atau filter unit bila muridnya banyak", null, 4400);
+  await tap(p, "button[data-a=tcSave]", { after: 1400 });
+  await cap(p, "Program tersimpan, lengkap dengan jumlah peserta dan sesi", null, 3000);
+  // program yang sedang berjalan langsung terbuka; bila belum, buka lewat tombol Absensi
+  if (!(await p.locator("input[data-tca]").count())) await tap(p, "button[data-a=tcOpen]", { after: 900 });
+  await p.evaluate(() => document.getElementById("tcDet")?.scrollIntoView({ block: "start" })); await sleep(700);
+  await cap(p, "Tekan “Absensi”, pilih tanggal sesi, lalu ketuk murid yang hadir. Absensi TC terpisah, jadi persentase latihan rutin tidak berubah", "ABSENSI TC", 4800);
+  for (const i of [0, 1]) await tap(p, "input[data-tca]", { nth: i, after: 500 });
+  await cap(p, "Orang tua melihat jadwal dan jumlah kehadiran TC anaknya di Portal Orang Tua 🎉", null, 4200);
+  return rc;
+};
+
+// 10) Unit sekolah, kelas murid, dan naik kelas (khusus SaaS)
+if (SAAS) S["10-unit-sekolah-dan-naik-kelas"] = async () => {
+  // data awal: unit "Cabang Timur" dijadikan unit sekolah dan beberapa murid diberi kelas (lewat API, di luar rekaman)
+  const hdr = seed.H;
+  await fetch(base + "/api/docs/units/cabang-timur", { method: "PUT", headers: hdr, body: JSON.stringify({ name: "Cabang Timur", fee: 100000, sekolah: true, klsMax: 6 }) });
+  for (const [id, kls] of [["kevin-santoso", "6A"], ["dinda-lestari", "4B"], ["bagas-wibowo", "5A"]]) {
+    const cur = await (await fetch(base + "/api/all", { headers: hdr })).json();
+    const st = (cur.data.students || []).find(x => x.id === id);
+    if (st) { const { id: _i, ...rest } = st; await fetch(base + "/api/docs/students/" + id, { method: "PUT", headers: hdr, body: JSON.stringify({ ...rest, kls }) }); }
+  }
+  const rc = await newRec(browser, { ...D, init: adminInit });
+  const p = rc.page;
+  await p.goto(base + "/"); await p.waitForSelector(NAV("jad")); await sleep(900);
+  await go(p, "jad", 900);
+  await cap(p, "Menu Jadwal & Unit: untuk dojang yang melatih di sekolah (ekskul), ubah “Tipe unit” menjadi “Unit sekolah”", "UNIT SEKOLAH", 3800);
+  await cap(p, "Atur kelas tertinggi di sekolah itu (bawaan 6 untuk SD). Murid di kelas tertinggi akan menjadi “Lulus”", null, 3800);
+  await go(p, "mur", 900);
+  await cap(p, "Di daftar Murid, kelas tampil sebagai label 🏫. Pilih unit sekolah di kiri atas untuk melihatnya", "KELAS MURID", 3400);
+  await tap(p, "button[data-a=add]", { after: 700 });
+  await typeIn(p, "#fn", "Salsa Nabila", { delay: 60 });
+  await typeIn(p, "#fu", "Cabang Timur", { delay: 50 });
+  await typeIn(p, "#fkls", "3A", { delay: 90 });
+  await cap(p, "Form murid punya isian “Kelas di sekolah” (mis. 5A, IV-B, XI IPA 1). Kosongkan bila bukan unit sekolah", null, 4200);
+  await tap(p, "button[data-a=save]", { after: 1400 });
+  await go(p, "jad", 900);
+  await cap(p, "Kenaikan kelas: tekan “Naik kelas” di unit sekolah. Semua murid unit itu naik satu kelas (4B → 5B, 6A → Lulus)", "NAIK KELAS", 4400);
+  await tap(p, "button[data-a=naikKls]", { after: 700 });
+  await cap(p, "Ada konfirmasi “Yakin?” supaya tidak tertekan tidak sengaja. Tekan sekali lagi untuk memproses", null, 3600);
+  await tap(p, "button[data-a=naikKls]", { after: 1500 });
+  await cap(p, "Selesai. Salah tekan? Tombol “Batalkan naik kelas” mengembalikan semuanya. Kelas juga bisa dipakai menyaring Murid, Absensi, dan Penilaian 🎉", null, 4800);
+  return rc;
+};
+
 if (SAAS) {
 // 7) Super Admin: klien baru + pembayaran manual
 S["07-super-admin-klien-dan-pembayaran"] = async () => {

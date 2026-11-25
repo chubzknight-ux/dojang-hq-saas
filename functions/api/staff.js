@@ -3,7 +3,7 @@
 // Super Admin juga bisa, lewat header X-Target-Club.
 // Semua data pelatih tersimpan di tabel "docs", koleksi "staff", dengan id "<klub>__<username>".
 
-import { authenticate, cleanSlug, getDoc, putDoc, clubRows, ensureSchema } from "./_auth.js";
+import { authenticate, cleanSlug, getDoc, putDoc, clubRows, ensureSchema, rlBump } from "./_auth.js";
 
 const J = (d, s = 200) => new Response(JSON.stringify(d), {
   status: s,
@@ -216,10 +216,7 @@ export async function rlBlocked(env, request) {
   return !!d && d.n >= RL_MAX && Date.now() - d.t < RL_WIN;
 }
 export async function rlFail(env, request) {
-  let d = await rlGet(env, request);
-  if (!d || Date.now() - d.t >= RL_WIN) d = { n: 0, t: Date.now() };
-  d.n++;
-  await env.DB.prepare("INSERT OR REPLACE INTO docs(coll,id,data) VALUES('staff_rl',?,?)").bind(ipOf(request), JSON.stringify(d)).run();
+  await rlBump(env, ipOf(request), RL_WIN);   // atomik: permintaan paralel tidak bisa lolos bersamaan
   await rlSweep(env);
 }
 // Catatan pembatas yang sudah lewat 1 hari dihapus sesekali, supaya tidak menumpuk di database
@@ -232,14 +229,9 @@ async function rlSweep(env) {
 // Pembatas jumlah per IP (atau per kunci lain bila diberikan) untuk aksi publik. true = boleh, false = sudah melewati batas.
 export async function hitLimit(env, request, prefix, max, winMs, key) {
   const id = prefix + "|" + (key != null ? String(key) : ipOf(request));
-  const r = await env.DB.prepare("SELECT data FROM docs WHERE coll='staff_rl' AND id=?").bind(id).first();
-  let d = r ? JSON.parse(r.data) : null;
-  if (!d || Date.now() - d.t >= winMs) d = { n: 0, t: Date.now() };
-  if (d.n >= max) return false;
-  d.n++;
-  await env.DB.prepare("INSERT OR REPLACE INTO docs(coll,id,data) VALUES('staff_rl',?,?)").bind(id, JSON.stringify(d)).run();
+  const n = await rlBump(env, id, winMs);     // atomik: hitung dulu, lalu bandingkan
   await rlSweep(env);
-  return true;
+  return n <= max;
 }
 // Kata sandi: minimal 8 karakter, ada huruf dan angka, tidak memuat nama pengguna
 const pwProblem = (pw, username) =>
