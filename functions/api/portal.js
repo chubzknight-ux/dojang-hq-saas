@@ -128,9 +128,9 @@ export async function onRequestGet({ request, env }) {
     if (String(club.expiresAt) < today) return J({ error: "Portal dojang ini sedang tidak aktif." }, 402);
   }
 
-  const rows = await clubRows(env, clubId, ["students", "attendance", "payments", "evaluations", "classes", "pengumuman"]);
+  const rows = await clubRows(env, clubId, ["students", "attendance", "payments", "evaluations", "classes", "pengumuman", "tc", "tc_absen"]);
   const by = c => rows.filter(r => r.coll === c).map(r => ({ id: r.id, ...r.d }));
-  const students = by("students"), attendance = by("attendance"), payments = by("payments"), evaluations = by("evaluations"), classes = by("classes"), pengumuman = by("pengumuman");
+  const students = by("students"), attendance = by("attendance"), payments = by("payments"), evaluations = by("evaluations"), classes = by("classes"), pengumuman = by("pengumuman"), tcs = by("tc"), tcAbs = by("tc_absen");
 
   const sid = String(st.id).trim();
   const sidLow = sid.toLowerCase();
@@ -159,7 +159,7 @@ export async function onRequestGet({ request, env }) {
     : [];
 
   // hanya data yang ditampilkan di portal orang tua (tanpa nomor WA & data internal lain)
-  const SHOW = ["id", "n", "a", "bi", "v", "unit", "gender", "ortu", "fee", "cuti", "cutiKet", "cutiTgl", "sejak", "sk", "siap", "pct", "note", "sabukHist"];
+  const SHOW = ["id", "n", "a", "bi", "v", "unit", "unit2", "kls", "gender", "ortu", "fee", "cuti", "cutiKet", "cutiTgl", "sejak", "sk", "siap", "pct", "note", "sabukHist"];
   const student = {};
   for (const k of SHOW) if (st[k] !== undefined) student[k] = st[k];
   if (st.lahir) student.a = ageOf(st.lahir, st.a);      // usia ikut bertambah tiap tahun (tanggal lahir sendiri tidak dikirim)
@@ -175,11 +175,24 @@ export async function onRequestGet({ request, env }) {
     classes: classes.map(({ clubId: _x, ...c }) => c),
     // pengumuman yang sedang berlaku untuk semua unit atau unit anak ini
     announcements: (() => {
-      const t = wibToday(), u = String(st.unit || "Utama").trim().toLowerCase();
+      const t = wibToday(), us = new Set([st.unit || "Utama", ...(Array.isArray(st.unit2) ? st.unit2 : [])].map(x => String(x || "").trim().toLowerCase()));
       return pengumuman
-        .filter(a => String(a.mulai || "") <= t && String(a.sampai || "") >= t && (!a.unit || String(a.unit).trim().toLowerCase() === u))
+        .filter(a => String(a.mulai || "") <= t && String(a.sampai || "") >= t && (!a.unit || us.has(String(a.unit).trim().toLowerCase())))
         .sort((a, b) => String(b.mulai || "").localeCompare(String(a.mulai || "")))
         .map(a => ({ judul: String(a.judul || "").slice(0, 120), isi: String(a.isi || "").slice(0, 1500), unit: String(a.unit || "").slice(0, 40), mulai: a.mulai, sampai: a.sampai }));
+    })(),
+    // program Latihan TC yang diikuti anak ini (yang selesai lebih dari 90 hari lalu tidak ditampilkan)
+    tc: (() => {
+      const s = v => String(v == null ? "" : v);
+      const old = new Date(Date.now() + 7 * 3600e3 - 90 * 864e5).toISOString().slice(0, 10);
+      return tcs
+        .filter(t => Array.isArray(t.peserta) && t.peserta.some(x => s(x).trim().toLowerCase() === sidLow) && !(t.sampai && s(t.sampai) < old))
+        .sort((a, b) => s(b.mulai).localeCompare(s(a.mulai)))
+        .slice(0, 10)
+        .map(t => {
+          const ses = tcAbs.filter(x => s(x.tc || s(x.id).split("__")[0]) === t.id && x.ids && typeof x.ids === "object" && Object.values(x.ids).some(Boolean));
+          return { nama: s(t.nama).slice(0, 80), mulai: s(t.mulai).slice(0, 10), sampai: s(t.sampai).slice(0, 10), h: s(t.h).slice(0, 60), j: s(t.j).slice(0, 40), l: s(t.l).slice(0, 80), p: s(t.p).slice(0, 80), ket: s(t.ket).slice(0, 600), sesi: ses.length, hadir: ses.filter(x => hasId(x.ids)).length };
+        });
     })()
   }), {
     headers: { "content-type": "application/json", "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", "Pragma": "no-cache", "Expires": "0" }

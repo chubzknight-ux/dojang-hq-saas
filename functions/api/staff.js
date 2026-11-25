@@ -106,6 +106,23 @@ export function cleanEvalDoc(user, id, d, scope) {
   return { clean: { clubId: user.clubId, date: m[1], coach: user.name, updatedAt: clip(d.updatedAt, 20), ev } };
 }
 
+// Absensi Latihan TC: id "<program>__<tanggal>", hanya untuk peserta program itu (dan dalam unit akun bila dibatasi)
+async function cleanTcAbsen(env, user, id, d, scope) {
+  if (!permOf(user).absen) return { error: "Akun ini belum diberi izin mengisi absensi.", status: 403 };
+  const m = /^([A-Za-z0-9_-]{1,80})__(\d{4}-\d{2}-\d{2})$/.exec(String(id || ""));
+  if (!m) return { error: "Sesi TC tidak valid.", status: 400 };
+  if (!d || typeof d !== "object" || !d.ids || typeof d.ids !== "object" || Array.isArray(d.ids)) return { error: "Data absensi tidak valid.", status: 400 };
+  const keys = Object.keys(d.ids);
+  if (keys.length > 3000) return { error: "Data terlalu besar.", status: 413 };
+  const tc = await getDoc(env, user.clubId, "tc", m[1]);
+  if (!tc || tc.foreign) return { error: "Program TC tidak ditemukan.", status: 404 };
+  const pes = new Set((Array.isArray(tc.data.peserta) ? tc.data.peserta : []).map(String));
+  const ids = {};
+  for (const k of keys) if (validSid(k) && pes.has(k) && (!scope || scope.ids.has(k))) ids[k] = !!d.ids[k];
+  if (keys.length && !Object.keys(ids).length) return { error: "Murid tersebut bukan peserta TC yang boleh Anda akses.", status: 403 };
+  return { clean: { clubId: user.clubId, tc: m[1], date: m[2], ids } };
+}
+
 function cleanAttendance(user, id, d, scope) {
   if (!permOf(user).absen) return { error: "Akun ini belum diberi izin mengisi absensi.", status: 403 };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(id || ""))) return { error: "Tanggal absensi tidak valid.", status: 400 };
@@ -134,7 +151,12 @@ export function unitScope(user, studentRows) {
   const us = (user && Array.isArray(user.units) ? user.units : []).map(unitKey).filter(Boolean);
   if (!us.length) return null;
   const units = new Set(us), ids = new Set();
-  for (const r of studentRows) if (units.has(unitKey((r.data && r.data.unit) || DEF_UNIT))) ids.add(r.id);
+  // murid boleh terdaftar di unit tambahan (unit2), jadi ikut terlihat oleh pelatih unit itu
+  for (const r of studentRows) {
+    const d = r.data || {};
+    const mine = [d.unit || DEF_UNIT, ...(Array.isArray(d.unit2) ? d.unit2 : [])];
+    if (mine.some(x => units.has(unitKey(x)))) ids.add(r.id);
+  }
   return { units, ids };
 }
 export async function scopeOf(env, user) {
@@ -267,11 +289,12 @@ export async function onRequestGet({ request, env }) {
   const u = await userFromToken(request, env);
   if (!u) return J({ error: "unauthorized" }, 401);
 
-  const rows = (await clubRows(env, u.clubId, ["students", "attendance", "evaluations", "classes", "coaches", "units", "pengumuman"]))
+  const rows = (await clubRows(env, u.clubId, ["students", "attendance", "evaluations", "classes", "coaches", "units", "pengumuman", "tc", "tc_absen"]))
     .sort((a, b) => (a.coll + a.id).localeCompare(b.coll + b.id));
   const scope = unitScope(u, rows.filter(r => r.coll === "students").map(r => ({ id: r.id, data: r.d })));
 
-  const out = { students: [], attendance: [], evaluations: [], classes: [], coaches: [], units: [], pengumuman: [] };
+  const out = { students: [], attendance: [], evaluations: [], classes: [], coaches: [], units: [], pengumuman: [], tc: [], tc_absen: [] };
+  const tcSeen = new Map(), tcAbs = [];
   for (const { coll, id, d } of rows) {
     if (coll === "students") {
       if (scope && !scope.ids.has(id)) continue;
@@ -310,7 +333,21 @@ export async function onRequestGet({ request, env }) {
       if (String(d.sampai || "") < wibToday()) continue;
       if (scope && d.unit && !scope.units.has(unitKey(d.unit))) continue;
       out.pengumuman.push({ id, judul: clip(d.judul, 120), isi: clip(d.isi, 1500), unit: clip(d.unit, 40), mulai: clip(d.mulai, 10), sampai: clip(d.sampai, 10) });
-    }
+    } else if (coll === "tc") {
+      // program TC: pelatih yang dibatasi unit hanya melihat peserta dari unitnya
+      let pes = Array.isArray(d.peserta) ? d.peserta.map(String) : [];
+      if (scope) pes = pes.filter(x => scope.ids.has(x));
+      if (scope && !pes.length) continue;
+      tcSeen.set(id, new Set(pes));
+      out.tc.push({ id, ...d, peserta: pes });
+    } else if (coll === "tc_absen") tcAbs.push({ id, d });
+  }
+  for (const { id, d } of tcAbs) {
+    const allow = tcSeen.get(String(d.tc || String(id).split("__")[0]));
+    if (!allow) continue;
+    const ids = {};
+    for (const k of Object.keys(d.ids || {})) if (allow.has(k)) ids[k] = d.ids[k];
+    out.tc_absen.push({ id, ...d, ids });
   }
   return jsonEtag(request, {
     club: await clubInfo(env, u._club),
@@ -417,10 +454,10 @@ export async function onRequestPost({ request, env }) {
     const id = clip(body.id, 140);
     let r;
     const scope = await scopeOf(env, user);
-    if (body.coll === "attendance") {
-      r = cleanAttendance(user, id, body.data, scope);
+    if (body.coll === "attendance" || body.coll === "tc_absen") {
+      r = body.coll === "attendance" ? cleanAttendance(user, id, body.data, scope) : await cleanTcAbsen(env, user, id, body.data, scope);
       if (r.clean && body.patch === true) {            // gabungkan hanya yang berubah, supaya tidak menimpa centang pelatih lain
-        const old = await getDoc(env, user.clubId, "attendance", id);
+        const old = await getDoc(env, user.clubId, body.coll, id);
         if (old && old.foreign) return J({ error: "forbidden" }, 403);
         r.clean.ids = { ...((old && old.data.ids) || {}), ...r.clean.ids };
       }
@@ -431,12 +468,13 @@ export async function onRequestPost({ request, env }) {
 
     // hanya murid milik klub ini yang boleh dicatat
     const known = new Set((await env.DB.prepare("SELECT id FROM docs WHERE coll='students' AND json_extract(data,'$.clubId')=?").bind(user.clubId).all()).results.map(x => x.id));
-    const bag = body.coll === "attendance" ? r.clean.ids : r.clean.ev;
+    const isEv = body.coll === "evaluations";
+    const bag = isEv ? r.clean.ev : r.clean.ids;
     for (const k of Object.keys(bag)) if (!known.has(k)) delete bag[k];
-    if (!Object.keys(bag).length && Object.keys(body.data[body.coll === "attendance" ? "ids" : "ev"] || {}).length) return J({ error: "Murid tidak ditemukan di dojang ini." }, 403);
+    if (!Object.keys(bag).length && Object.keys(body.data[isEv ? "ev" : "ids"] || {}).length) return J({ error: "Murid tidak ditemukan di dojang ini." }, 403);
 
     await putDoc(env, user.clubId, body.coll, id, r.clean);
-    if (body.coll === "attendance") await audit(env, user.clubId, user.name, "pelatih", "absensi", { id, set: body.patch === true ? body.data.ids : undefined });
+    if (!isEv) await audit(env, user.clubId, user.name, "pelatih", body.coll === "attendance" ? "absensi" : "absensi_tc", { id, set: body.patch === true ? body.data.ids : undefined });
     else await audit(env, user.clubId, user.name, "pelatih", "penilaian", { id, n: Object.keys(r.clean.ev).length });
     return J({ ok: true });
   }
