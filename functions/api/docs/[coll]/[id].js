@@ -76,7 +76,7 @@ export async function onRequestPut({ params, env, request }) {
     if (lim) return J({ error: lim, upgrade: true }, 402);
   }
 
-  await putDoc(env, auth.clubId, params.coll, params.id, b);
+  if (!(await putDoc(env, auth.clubId, params.coll, params.id, b))) return J({ error: "forbidden cross-tenant" }, 403);
   await log(env, auth, "data_simpan", params.coll, params.id, b);
   return J({ ok: true });
 }
@@ -113,7 +113,7 @@ export async function onRequestPatch({ params, env, request }) {
   if (mergeIds && (!b.ids || typeof b.ids !== "object" || Array.isArray(b.ids))) return J({ error: "bad ids" }, 400);
   const old = cur ? cur.data : {};
   const merged = mergeIds ? { ...old, ...b, ids: { ...(old.ids && typeof old.ids === "object" ? old.ids : {}), ...b.ids } } : { ...old, ...b };
-  await putDoc(env, auth.clubId, params.coll, params.id, merged);
+  if (!(await putDoc(env, auth.clubId, params.coll, params.id, merged))) return J({ error: "forbidden cross-tenant" }, 403);
   if (mergeIds) await audit(env, auth.clubId, auth.role === "superadmin" ? "Super Admin" : "Admin", "owner", "data_simpan", { coll: params.coll, id: params.id, set: b.ids }, 10);
   else await log(env, auth, "data_simpan", params.coll, params.id, merged);
   return J({ ok: true });

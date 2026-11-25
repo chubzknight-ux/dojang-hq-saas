@@ -33,11 +33,12 @@ export async function onRequestGet({ env, request }) {
 
   let clubId = user ? user.clubId : cleanSlug(new URL(request.url).searchParams.get("club") || "");
   if (!clubId) {
-    // belum tahu klub mana: kalau hanya ada satu klub aktif, pakai itu; kalau banyak, minta pilih
+    // belum tahu klub mana: kalau hanya ada satu klub aktif, pakai itu; kalau banyak, minta kode klub.
+    // Daftar nama klub TIDAK ditampilkan tanpa login (itu daftar pelanggan platform).
     const rs = await env.DB.prepare("SELECT id, data FROM docs WHERE coll='clubs'").all();
     const clubs = rs.results.map(r => ({ id: r.id, ...JSON.parse(r.data) })).filter(c => c.status !== "suspended");
     if (clubs.length === 1) clubId = clubs[0].id;
-    else return J({ needsClub: true, clubs: clubs.map(c => ({ id: c.id, name: c.name || c.id })) });
+    else return J({ needsClub: true });
   }
 
   const c = user ? { club: user._club } : await loadClub(env, clubId);
