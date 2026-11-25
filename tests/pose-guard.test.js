@@ -1,5 +1,5 @@
 // Unit test sintetis untuk penyaring "kerangka hantu" di Analisa Video (index.html).
-// Jalankan: node --test tests/
+// Jalankan: node --test
 // Kode yang diuji diambil langsung dari index.html (blok ==POSE-GUARD-START== ... ==POSE-GUARD-END==),
 // jadi tes ini selalu menguji kode yang benar-benar dipakai aplikasi.
 const test = require("node:test");

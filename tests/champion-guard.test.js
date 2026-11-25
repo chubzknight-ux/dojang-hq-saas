@@ -1,5 +1,5 @@
 // Unit test sintetis untuk penyaring "kerangka hantu" di Champion (champion.html).
-// Jalankan: node --test tests/
+// Jalankan: node --test
 // Kode diambil langsung dari champion.html (blok ==CHAMP-GUARD-START== ... ==CHAMP-GUARD-END==).
 const test = require("node:test");
 const assert = require("node:assert/strict");

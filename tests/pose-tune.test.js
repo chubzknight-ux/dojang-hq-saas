@@ -1,5 +1,5 @@
 // Unit test penyetelan otomatis (Log Teknis): penyandian log, simulasi ulang, dan pencarian ambang.
-// Jalankan: node --test tests/
+// Jalankan: node --test
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
