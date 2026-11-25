@@ -481,7 +481,7 @@ export async function onRequestPost({ request, env }) {
     const rs = await env.DB.prepare("SELECT id,data FROM docs WHERE coll='staff' AND json_extract(data,'$.clubId')=?").bind(clubId).all();
     const users = rs.results.map(r => {
       const d = JSON.parse(r.data);
-      return { username: d.username || r.id.slice(clubId.length + 2), name: d.name, active: !!d.active, pending: !!d.pending, perm: permOf(d), units: Array.isArray(d.units) ? d.units : [], lastLogin: d.lastLogin || "", createdAt: d.createdAt || "" };
+      return { username: d.username || r.id.slice(clubId.length + 2), name: d.name, active: !!d.active, pending: !!d.pending, perm: permOf(d), units: Array.isArray(d.units) ? d.units : [], coachId: d.coachId || "", lastLogin: d.lastLogin || "", createdAt: d.createdAt || "" };
     }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
     return J({ users });
   }
@@ -503,6 +503,7 @@ export async function onRequestPost({ request, env }) {
     if (!u.perm) u.perm = { absen: false, nilai: false };
     if (Array.isArray(body.units)) u.units = [...new Set(body.units.map(x => clip(x, 40).trim()).filter(Boolean))].slice(0, 10);
     if (!Array.isArray(u.units)) u.units = [];
+    if (typeof body.coachId === "string" && body.coachId.trim()) u.coachId = clip(body.coachId, 60).trim();   // tautan tetap ke data pelatih (tidak putus saat nama diganti)
     if (password) {
       const salt = rand(16);
       u.salt = toB64(salt);
