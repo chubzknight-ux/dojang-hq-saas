@@ -1044,7 +1044,7 @@ if(params.has("panduan")){
       if(__role==="superadmin"&&!body.club){
         __club=null;__saClubs=body.clubs||[];__saCounts=body.counts||{};__cache={};
         window.__CLUB_NAME="";window.__HEAD="";window.__LOGO_DATA__="";
-        if(cur!=="sa"&&cur!=="upd"&&cur!=="pay"&&cur!=="pan")cur="sa";
+        if(cur!=="sa"&&cur!=="upd"&&cur!=="pay"&&cur!=="pan"&&cur!=="tlg")cur="sa";
       }else{
         __club=body.club||{id:"default",name:"Dojang HQ",headCoach:"Kepala Pelatih",logo:""};
         __cache=body.data||{};
@@ -1262,7 +1262,7 @@ if(params.has("panduan")){
   };
   function buildNav(){
     if(__role==="superadmin"&&!__club){
-      document.querySelector("nav").innerHTML=`<div class="brand"><div>Dojang HQ<small>👑 Super Admin</small></div></div><button data-v="sa">🏢 ${T("Kelola Dojang Klien","Client Dojangs")}</button><button data-v="pay">💰 ${T("Pembayaran","Payments")}</button><button data-v="pan">📖 ${T("Panduan","Guide")}</button><button data-v="upd">🚀 ${T("Update App (Semua Klien)","Update App (All Clients)")}</button><button id="logoutBtn" style="margin-top:auto;opacity:.8">🔒 ${T("Keluar","Sign Out")}</button>`;
+      document.querySelector("nav").innerHTML=`<div class="brand"><div>Dojang HQ<small>👑 Super Admin</small></div></div><button data-v="sa">🏢 ${T("Kelola Dojang Klien","Client Dojangs")}</button><button data-v="pay">💰 ${T("Pembayaran","Payments")}</button><button data-v="pan">📖 ${T("Panduan","Guide")}</button><button data-v="upd">🚀 ${T("Update App (Semua Klien)","Update App (All Clients)")}</button><button data-v="tlg">🧠 ${T("Log Teknis & Penyetelan","Tech Log & Tuning")}</button><button id="logoutBtn" style="margin-top:auto;opacity:.8">🔒 ${T("Keluar","Sign Out")}</button>`;
       const mb=document.getElementById("mbar");if(mb)mb.innerHTML=`<button type="button" data-v="sa"><span aria-hidden="true">🏢</span><small>${T("Klien","Clients")}</small></button><button type="button" data-v="pay"><span aria-hidden="true">💰</span><small>${T("Bayar","Pay")}</small></button><button type="button" data-v="upd"><span aria-hidden="true">🚀</span><small>Update</small></button><button type="button" id="mMore" aria-controls="mainNav"><span aria-hidden="true">☰</span><small>${T("Lainnya","More")}</small></button>`;
       document.getElementById("logoutBtn").onclick=()=>{localStorage.removeItem("dojang_pin");localStorage.removeItem("dojang_atok");localStorage.removeItem("dojang_token");localStorage.removeItem("dojang_target_club");__pin="";__atok="";__tok="";__targetClub="";location.reload()};
       FT.length=0;
@@ -1391,7 +1391,7 @@ document.addEventListener("change",e=>{
 });
   function draw(){
     if(__role==="superadmin"&&!__club){
-      if(cur!=="sa"&&cur!=="upd"&&cur!=="pay"&&cur!=="pan")cur="sa";
+      if(cur!=="sa"&&cur!=="upd"&&cur!=="pay"&&cur!=="pan"&&cur!=="tlg")cur="sa";
       $("#app").innerHTML=V[cur]();
       document.querySelectorAll("nav button[data-v],#mbar button[data-v]").forEach(b=>b.setAttribute("aria-current",b.dataset.v==cur));
       applyLogoAll();
@@ -2285,7 +2285,193 @@ document.addEventListener("change",e=>{
   function kinPt(p,i,back){const a=p&&p[i],b=p&&p[KIN_PROX[i]];return a&&b&&a.v>(back?KIN.distVBack:KIN.distV)&&b.v>(back?KIN.proxVBack:KIN.proxV)?a:null}
   // Jumlah frame yang diambil dari video unggahan: jeda antar frame dijaga < 0.5 dtk supaya konfirmasi 8 frame tetap bisa jalan di video panjang
   function poseN(dur){return Math.max(Math.min(240,Math.max(20,Math.round(dur*8))),Math.ceil(dur*0.98/(PG.confGap*0.9))+1)}
+  // ---- Penyetelan otomatis dari log teknis ----
+  // Ambang bawaan + batas aman penyetelan [min, maks, langkah]. Batas sama dengan BOUNDS di functions/api/techlog.js.
+  // Di luar batas ini penyaring bisa meloloskan kerangka di benda, jadi penyetel otomatis tidak boleh melewatinya.
+  const PG_DEF={...PG};
+  const PG_BOUNDS={meanV:[0.5,0.65,0.025],meanVBack:[0.45,0.55,0.025],coreV:[0.4,0.55,0.025],legV:[0.4,0.55,0.025],minTorsoH:[0.04,0.07,0.005],minBodyH:[0.15,0.22,0.01],confN:[6,10,1]};
+  // legV ikut menyetel legVBack dengan selisih yang sama
+  function poseCfgApply(pg){
+    const o={};Object.keys(PG_BOUNDS).forEach(k=>{const b=PG_BOUNDS[k];let v=Number(pg&&pg[k]);if(!Number.isFinite(v))v=PG_DEF[k];if(k==="confN")v=Math.round(v);o[k]=Math.min(b[1],Math.max(b[0],v))});
+    Object.assign(PG,PG_DEF,o,{legVBack:Math.max(0.3,PG_DEF.legVBack+(o.legV-PG_DEF.legV)),coreVBack:Math.max(0.3,PG_DEF.coreVBack+(o.coreV-PG_DEF.coreV))});
+    return o;
+  }
+  // Log titik tubuh tanpa gambar: 13 titik (hidung, bahu-pergelangan tangan, pinggul-pergelangan kaki) x (x, y, visibility)
+  const POSE_LOG_IDS=[0,11,12,13,14,15,16,23,24,25,26,27,28];
+  const q3=x=>String(Math.max(0,Math.min(999,Math.round(x*999)))).padStart(3,"0"),q2=x=>String(Math.max(0,Math.min(99,Math.round((Number(x)||0)*99)))).padStart(2,"0");
+  function poseEnc(L){return L?POSE_LOG_IDS.map(i=>{const p=L[i]||{};return q3(p.x||0)+q3(p.y||0)+q2(p.visibility!==undefined?p.visibility:p.v)}).join(""):""}
+  function poseDec(s){
+    if(!s||s.length!==POSE_LOG_IDS.length*8)return null;
+    const L=Array.from({length:33},()=>({x:0,y:0,visibility:0}));
+    POSE_LOG_IDS.forEach((i,k)=>{const o=k*8;L[i]={x:+s.slice(o,o+3)/999,y:+s.slice(o+3,o+6)/999,visibility:+s.slice(o+6,o+8)/99}});
+    return L;
+  }
+  // Ulangi satu analisa dari log dengan ambang PG yang sedang aktif. sub = {w,h,view,fr:[string...]}, dt = jeda antar frame (dtk)
+  // Hasil: bagian frame yang terpakai (lolos plausible, sah, dan titik inti terlihat) seperti syarat 40% di analisa.
+  function poseSimSub(sub){
+    const dec=sub._dec||(sub._dec=sub.fr.map(poseDec)),w=sub.w,h=sub.h,dt=sub.dt||0.125,th=sub.view==="belakang"?0.35:0.5;
+    const fr=dec.map((L,i)=>({t:i*dt,p:L&&plausible(L,w,h,{view:sub.view||"auto"})?L:null}));
+    const cf=poseConfirmSeq(fr,true);
+    let ok=0;cf.forEach(f=>{const L=f.p;if(!L)return;if(![11,12,23,24,25,26,27,28].every(i=>L[i].visibility>th))return;
+      if(Math.hypot((L[11].x+L[12].x-L[23].x-L[24].x)/2*w,(L[11].y+L[12].y-L[23].y-L[24].y)/2*h)<8)return;ok++});
+    return dec.length?ok/dec.length:0;
+  }
+  // Cari ambang terbaik: sebanyak mungkin analisa yang lolos (>= 40% frame terpakai), tapi tiap langkah yang lebih longgar
+  // dari bawaan "dihukum" 0.3 analisa, jadi ambang hanya dilonggarkan bila benar-benar menyelamatkan analisa nyata.
+  // Ada laporan kerangka di benda (ghost) → tidak dilonggarkan; semua ambang dikencangkan 1 langkah (maks. sampai bawaan).
+  function poseTune(subs,cur,ghosts){
+    const keys=Object.keys(PG_BOUNDS),saved={...PG},start=poseCfgApply(cur||{});
+    const loose=pg=>keys.reduce((s,k)=>{const b=PG_BOUNDS[k],d=(PG_DEF[k]-pg[k])/b[2];return s+Math.max(0,Math.round(d*1000)/1000)},0);
+    // rekaman yang hasilnya sama di setelan terlonggar maupun terketat tidak terpengaruh ambang: dihitung sekali saja
+    const lo={},hi={};keys.forEach(k=>{lo[k]=PG_BOUNDS[k][0];hi[k]=PG_BOUNDS[k][1]});
+    poseCfgApply(lo);const vLo=subs.map(poseSimSub);poseCfgApply(hi);const vHi=subs.map(poseSimSub);
+    const fixPass=subs.filter((s,i)=>vHi[i]>=0.4).length,live=subs.filter((s,i)=>(vLo[i]>=0.4)!==(vHi[i]>=0.4));
+    const evalPg=pg=>{poseCfgApply(pg);let pass=fixPass,used=0;live.forEach(s=>{const v=poseSimSub(s);used+=v;if(v>=0.4)pass++});return {pass,used,score:pass-0.3*loose(pg)}};
+    try{
+      const base=evalPg(start);
+      if(ghosts>0){
+        const pg={...start};keys.forEach(k=>{const b=PG_BOUNDS[k];if(pg[k]<PG_DEF[k])pg[k]=Math.min(PG_DEF[k],+(pg[k]+b[2]).toFixed(4))});
+        const r=evalPg(pg),full=p=>{poseCfgApply(p);return subs.reduce((a,s)=>a+poseSimSub(s),0)};return {pg,before:{...base,used:full(start)},after:{...r,used:full(pg)},mode:"tighten"};
+      }
+      let best={pg:{...start},...base};
+      for(let round=0;round<2;round++)keys.forEach(k=>{
+        const b=PG_BOUNDS[k];
+        for(let st=-2;st<=2;st++){
+          if(!st)continue;
+          const v=+(best.pg[k]+st*b[2]).toFixed(4);if(v<b[0]-1e-9||v>b[1]+1e-9)continue;
+          const pg={...best.pg,[k]:v},r=evalPg(pg);
+          if(r.score>best.score+1e-9||(Math.abs(r.score-best.score)<1e-9&&r.used>best.used+1e-9))best={pg,...r};
+        }
+      });
+      const full=pg=>{poseCfgApply(pg);return subs.reduce((a,s)=>a+poseSimSub(s),0)};
+    return {pg:best.pg,before:{...base,used:full(start)},after:{pass:best.pass,used:full(best.pg),score:best.score},mode:"search",contested:live.length};
+    }finally{Object.assign(PG,saved)}
+  }
   // ==POSE-GUARD-END==
+  // ===== LOG TEKNIS & PENYETELAN OTOMATIS =====
+  // Tiap analisa video mengirim log anonim (angka titik tubuh tanpa gambar/nama, penyebab gagal) ke /api/techlog.
+  // Super Admin menekan satu tombol: log diuji ulang dengan berbagai ambang, ambang terbaik (dalam batas aman) diterapkan
+  // ke semua klien, dan log yang sudah dipakai dihapus. Gagal kirim log tidak pernah mengganggu pengguna.
+  let poseCfgVer=0;
+  (()=>{try{const c=JSON.parse(localStorage.getItem("pose_cfg")||"null");if(c){poseCfgApply(c.pg||{});poseCfgVer=c.ver||0}}catch(e){}
+    fetch("/api/techlog?cfg=1",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(c=>{if(!c||!c.pg)return;poseCfgApply(c.pg);poseCfgVer=c.ver||0;try{localStorage.setItem("pose_cfg",JSON.stringify({pg:c.pg,ver:c.ver||0}))}catch(e){}}).catch(()=>{})})();
+  function techLog(kind,rec){
+    try{
+      if(!(__atok||__tok||__pin))return Promise.resolve(null);
+      const hd=ROLE==="pelatih"?{"X-Dojang-Token":__tok}:__hdr();hd["content-type"]="application/json";
+      const body=JSON.stringify({kind,rec:{...rec,ver:(document.getElementById("appVer")||{}).textContent||"",cfg:poseCfgVer,ua:navigator.userAgent.slice(0,160),cpu:!!_poseCPU}});
+      if(body.length>118000)return Promise.resolve(null);
+      return fetch("/api/techlog",{method:"POST",headers:hd,body}).then(r=>r.ok?r.json():null).then(d=>(d&&d.id)||null).catch(()=>null);
+    }catch(e){return Promise.resolve(null)}
+  }
+  const tlKeep=id=>{if(id)anaState.lastLogId=id};
+  const tlErr=e=>e?(e.lowValid!==undefined||e._low?"low":String(e.message||e).slice(0,120)):"";
+  // error aplikasi (maks. 5 per sesi, pesan sama hanya sekali)
+  (()=>{let n=0;const seen=new Set();const rep=(msg,src,stack)=>{msg=String(msg||"").slice(0,300);if(!msg||n>=5||seen.has(msg)||/ResizeObserver|^Script error/.test(msg))return;seen.add(msg);n++;
+      techLog("err",{msg,src:String(src||"").slice(0,200),stack:String(stack||"").slice(0,800),view:typeof cur!=="undefined"?cur:""})};
+    window.addEventListener("error",e=>rep(e.message,String(e.filename||"").split("/").pop()+":"+e.lineno+":"+e.colno,e.error&&e.error.stack));
+    window.addEventListener("unhandledrejection",e=>{const r=e.reason;rep((r&&r.message)||String(r),"promise",r&&r.stack)});})();
+  document.addEventListener("click",async e=>{
+    const b=e.target.closest("[data-tl]");if(!b)return;
+    e.preventDefault();e.stopImmediatePropagation();
+    const a=b.dataset.tl;
+    if(a==="ghost"){const ref=anaState.lastLogId;if(!ref)return;anaState.ghostSent=ref;draw();await techLog("ghost",{ref,mode:anaState.mode});toast(T("Terima kasih! Laporan dipakai saat penyetelan berikutnya.","Thanks! The report will be used in the next tuning."));return}
+    if(a==="reload"){tlSt.at=Date.now();return tlLoad()}
+    if(a==="tune")return tlTune();
+    if(a==="rollback")return tlRollback();
+    if(a==="copy"){const txt=tlText();try{await navigator.clipboard.writeText(txt);toast(T("Ringkasan disalin","Summary copied"))}catch(x){prompt(T("Salin teks di bawah ini:","Copy the text below:"),txt)}}
+  },true);
+
+  // ---- halaman Super Admin ----
+  const tlSt={at:0,busy:false,data:null,err:"",msg:"",res:null};
+  const TL_LBL={meanV:["Kejelasan rata-rata titik tubuh","Average body-point clarity"],meanVBack:["Kejelasan rata-rata (kamera dari belakang)","Average clarity (camera behind)"],coreV:["Kejelasan bahu & pinggul","Shoulder & hip clarity"],legV:["Kejelasan lutut & pergelangan kaki","Knee & ankle clarity"],minTorsoH:["Ukuran badan minimal (torso / tinggi layar)","Minimum body size (torso / frame height)"],minBodyH:["Tinggi badan minimal (kepala–kaki / tinggi layar)","Minimum body height (head–feet / frame height)"],confN:["Frame berturut-turut untuk konfirmasi","Consecutive frames to confirm"]};
+  const tlFmt=(k,v)=>k==="confN"?String(Math.round(v)):(k==="minTorsoH"||k==="minBodyH")?Math.round(v*1000)/10+"%":(+v).toFixed(3).replace(/0$/,"");
+  const tlDate=t=>t?new Date(t+7*3600e3).toISOString().slice(0,16).replace("T"," "):"–";
+  async function tlLoad(){
+    tlSt.busy=true;tlSt.err="";draw();
+    try{const r=await fetch("/api/techlog",{headers:__hdr(),cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||("HTTP "+r.status));tlSt.data=d}
+    catch(e){tlSt.err=e.message||String(e)}
+    tlSt.busy=false;draw();
+  }
+  function tlSum(d){
+    const logs=(d&&d.logs)||[],ana=logs.filter(l=>l.kind==="ana"),err=logs.filter(l=>l.kind==="err"),gh=logs.filter(l=>l.kind==="ghost");
+    const subs=[];ana.forEach(l=>((l.rec&&l.rec.subs)||[]).forEach(s=>subs.push({l,s})));
+    const rej={vis:0,small:0,legs:0,pose:0};let fn=0,fnone=0;
+    ana.forEach(l=>{const g=l.rec&&l.rec.dg;if(!g)return;fn+=g.n||0;fnone+=g.none||0;Object.keys(rej).forEach(k=>rej[k]+=(g.rej&&g.rej[k])||0)});
+    const byMode={};subs.forEach(({l,s})=>{const k=(l.rec.mode||"?")+" · "+(l.rec.src==="live"?T("kamera live","live camera"):T("unggah","upload"))+(l.rec.multi?" · "+T("banyak orang","multi"):"");const o=byMode[k]||(byMode[k]={n:0,f:0});o.n++;if(!s.ok)o.f++});
+    const errs={};err.forEach(l=>{const k=(l.rec&&l.rec.msg)||"?";const o=errs[k]||(errs[k]={n:0,last:0,src:l.rec.src,view:l.rec.view,clubs:new Set()});o.n++;o.last=Math.max(o.last,l.t);o.clubs.add(l.clubId)});
+    const tune=[];ana.slice(0,150).forEach(l=>((l.rec&&l.rec.subs)||[]).forEach(s=>{if(s.fr&&s.fr.length&&l.rec.w&&l.rec.h)tune.push({w:l.rec.w,h:l.rec.h,view:l.rec.view,dt:l.rec.dt,fr:s.fr})}));
+    return {logs,ana,err,gh,subs,fail:subs.filter(x=>!x.s.ok),rej,fn,fnone,byMode,errs,tune};
+  }
+  async function tlTune(){
+    const d=tlSt.data;if(!d||tlSt.busy)return;
+    const S=tlSum(d);
+    if(S.tune.length<5)return toast(T("Data belum cukup: minimal 5 rekaman analisa video unggahan.","Not enough data: at least 5 uploaded-video analyses."));
+    tlSt.busy=true;tlSt.err="";tlSt.msg=T("Menguji ulang "+S.tune.length+" rekaman dengan berbagai ambang... (jangan tutup halaman)","Re-testing "+S.tune.length+" recordings with different thresholds... (keep this page open)");draw();
+    await new Promise(r=>setTimeout(r,60));
+    try{
+      const cur=(d.cfg&&d.cfg.pg)||{},t=poseTune(S.tune,cur,S.gh.length);
+      const curFull={};Object.keys(PG_BOUNDS).forEach(k=>curFull[k]=k in cur?cur[k]:PG_DEF[k]);
+      const changes=Object.keys(PG_BOUNDS).filter(k=>Math.abs(curFull[k]-t.pg[k])>1e-9).map(k=>({k,from:curFull[k],to:t.pg[k]}));
+      const errTop=Object.entries(S.errs).sort((a,b)=>b[1].n-a[1].n).slice(0,10).map(([msg,o])=>({msg,n:o.n,src:o.src,view:o.view}));
+      const report={subs:S.tune.length,ghosts:S.gh.length,mode:t.mode,before:{pass:t.before.pass,used:Math.round(t.before.used/S.tune.length*100)},after:{pass:t.after.pass,used:Math.round(t.after.used/S.tune.length*100)},changes,rej:S.rej,frames:S.fn,errTop,logs:S.logs.length};
+      const before=Math.max(...S.logs.map(l=>l.t||0));
+      const r=await fetch("/api/techlog",{method:"POST",headers:__hdr({"content-type":"application/json"}),body:JSON.stringify({action:"apply",pg:t.pg,before,report})});
+      const o=await r.json().catch(()=>({}));if(!r.ok)throw new Error(o.error||("HTTP "+r.status));
+      poseCfgApply(o.cfg.pg);poseCfgVer=o.cfg.ver;try{localStorage.setItem("pose_cfg",JSON.stringify({pg:o.cfg.pg,ver:o.cfg.ver}))}catch(x){}
+      tlSt.res={...report,deleted:o.deleted,ver:o.cfg.ver};
+      toast(T("✓ Penyetelan selesai & diterapkan ke semua klien","✓ Tuning done & applied to all clients"));
+    }catch(e){tlSt.err=e.message||String(e)}
+    tlSt.busy=false;tlSt.msg="";tlSt.at=Date.now();await tlLoad();
+  }
+  async function tlRollback(){
+    if(tlSt.busy||!confirm(T("Kembalikan ambang ke setelan sebelumnya?","Restore the previous thresholds?")))return;
+    tlSt.busy=true;draw();
+    try{const r=await fetch("/api/techlog",{method:"POST",headers:__hdr({"content-type":"application/json"}),body:JSON.stringify({action:"rollback"})});const o=await r.json().catch(()=>({}));if(!r.ok)throw new Error(o.error||("HTTP "+r.status));
+      poseCfgApply(o.cfg.pg||{});poseCfgVer=o.cfg.ver;try{localStorage.setItem("pose_cfg",JSON.stringify({pg:o.cfg.pg||{},ver:o.cfg.ver}))}catch(x){}tlSt.res=null;toast(T("Setelan sebelumnya dipulihkan","Previous settings restored"))}
+    catch(e){tlSt.err=e.message||String(e)}
+    tlSt.busy=false;tlSt.at=Date.now();await tlLoad();
+  }
+  function tlText(){
+    const d=tlSt.data||{},S=tlSum(d),cfg=d.cfg||{},pg=cfg.pg||{},L=[];
+    L.push("RINGKASAN LOG TEKNIS DOJANG HQ ("+tlDate(Date.now())+")");
+    L.push("Analisa tercatat: "+S.subs.length+" (gagal "+S.fail.length+"), laporan kerangka di benda: "+S.gh.length+", error aplikasi: "+S.err.length);
+    L.push("Per jenis: "+Object.entries(S.byMode).map(([k,o])=>k+" "+o.f+"/"+o.n+" gagal").join("; "));
+    if(S.fn)L.push("Frame ditolak penyaring (dari "+S.fn+" frame): "+Object.entries(S.rej).map(([k,v])=>k+" "+Math.round(v/S.fn*100)+"%").join(", ")+", tanpa orang "+Math.round(S.fnone/S.fn*100)+"%");
+    L.push("Ambang aktif v"+(cfg.ver||0)+": "+Object.keys(PG_BOUNDS).map(k=>k+"="+(k in pg?pg[k]:PG_DEF[k])).join(", "));
+    const top=Object.entries(S.errs).sort((a,b)=>b[1].n-a[1].n).slice(0,10);
+    if(top.length){L.push("Error aplikasi teratas:");top.forEach(([m,o])=>L.push("- ("+o.n+"x, "+o.clubs.size+" klub, menu "+(o.view||"?")+", "+(o.src||"?")+") "+m))}
+    const ex=S.err.find(l=>l.rec&&l.rec.stack);if(ex)L.push("Contoh stack: "+ex.rec.stack.slice(0,500));
+    return L.join("\n");
+  }
+  V.tlg=()=>{
+    if(__role!=="superadmin"||__club)return V.dash();
+    if(!tlSt.busy&&(!tlSt.at||Date.now()-tlSt.at>30000)){tlSt.at=Date.now();setTimeout(tlLoad,0)}
+    const d=tlSt.data,S=tlSum(d),cfg=(d&&d.cfg)||{pg:{}},pg=cfg.pg||{},hist=(d&&d.history)||[];
+    const kpi=(v,l)=>`<div class="kpi"><strong>${v}</strong>${l}</div>`;
+    const pct=(a,b)=>b?Math.round(a/b*100)+"%":"–";
+    let h=`${langBarHtml()}<div class="top"><div><h1>🧠 ${T("Log Teknis & Penyetelan Otomatis","Tech Log & Auto-Tuning")}</h1><span class="mu">${T("Log Analisa Video dari semua dojang (angka titik tubuh tanpa gambar/nama). Disimpan maks. 60 hari, dihapus setelah dipakai menyetel.","Video Analysis logs from all dojangs (body-point numbers, no images/names). Kept up to 60 days, deleted after tuning.")}</span></div></div>`;
+    if(tlSt.err)h+=`<div class="sec"><span class="pill warn">${esc(tlSt.err)}</span></div>`;
+    if(!d){return h+`<div class="sec"><p class="mu">${tlSt.busy?T("Memuat log...","Loading logs..."):""}</p></div>`}
+    h+=`<div class="kpis" style="margin:0 0 16px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">${kpi(S.subs.length,T("Analisa tercatat","Analyses logged"))}${kpi(S.fail.length+` <small style="font-size:14px">(${pct(S.fail.length,S.subs.length)})</small>`,T("Gagal terbaca","Failed to read"))}${kpi(S.gh.length,T("Laporan kerangka di benda","Skeleton-on-object reports"))}${kpi(S.err.length,T("Error aplikasi","App errors"))}</div>`;
+    // tombol utama
+    const can=S.tune.length>=5&&!tlSt.busy;
+    h+=`<div class="sec"><h2>⚙️ ${T("Penyetelan otomatis","Auto-tuning")}</h2><p class="mu" style="margin:0 0 10px;font-size:13.5px">${T("Satu klik: semua rekaman di log diuji ulang dengan berbagai ambang penyaring. Ambang dilonggarkan hanya bila menyelamatkan analisa yang gagal, tidak pernah melewati batas aman (supaya kerangka di benda tetap tertolak). Ada laporan kerangka di benda → ambang dikencangkan kembali. Hasil langsung berlaku untuk semua klien, log yang dipakai dihapus.","One click: every logged recording is re-tested with different filter thresholds. Thresholds are loosened only when that rescues failed analyses, never beyond safe limits (so skeletons on objects stay rejected). Skeleton-on-object reports → thresholds are tightened back. Applies to all clients immediately; used logs are deleted.")}</p>
+      <p style="display:flex;gap:8px;flex-wrap:wrap;margin:0"><button class="btn" data-tl="tune" ${can?"":"disabled"}>🧠 ${tlSt.busy&&tlSt.msg?esc(tlSt.msg):T("Pelajari log & setel otomatis","Learn from logs & auto-tune")}</button><button class="btn ghost" data-tl="copy">📋 ${T("Salin ringkasan untuk Claude","Copy summary for Claude")}</button><button class="btn ghost" data-tl="reload" ${tlSt.busy?"disabled":""}>🔄 ${T("Muat ulang","Reload")}</button>${hist.length?`<button class="btn ghost dn" data-tl="rollback" ${tlSt.busy?"disabled":""}>↩️ ${T("Kembalikan setelan sebelumnya","Restore previous settings")}</button>`:""}</p>
+      ${S.tune.length<5?`<p class="mu" style="margin:8px 0 0;font-size:12.5px">${T("Butuh minimal 5 rekaman analisa video unggahan (sekarang "+S.tune.length+").","Needs at least 5 uploaded-video analyses (now "+S.tune.length+").")}</p>`:""}</div>`;
+    const R=tlSt.res;
+    if(R)h+=`<div class="sec" style="border-top:4px solid var(--ok)"><h2>✓ ${T("Hasil penyetelan","Tuning result")} (v${R.ver})</h2><p style="margin:0 0 8px">${T("Diuji pada "+R.subs+" rekaman. Analisa lolos: ","Tested on "+R.subs+" recordings. Analyses passing: ")}<b>${R.before.pass} → ${R.after.pass}</b> · ${T("frame terpakai rata-rata","average frames used")}: <b>${R.before.used}% → ${R.after.used}%</b></p>${R.mode==="tighten"?`<div class="note">👻 ${T("Ada "+R.ghosts+" laporan kerangka di benda, jadi ambang dikencangkan kembali ke arah bawaan.","There were "+R.ghosts+" skeleton-on-object reports, so thresholds were tightened back toward the defaults.")}</div>`:""}${R.changes.length?`<div style="overflow-x:auto"><table style="width:100%;font-size:13.5px"><thead><tr><th align="left">${T("Ambang","Threshold")}</th><th align="left">${T("Sebelum","Before")}</th><th align="left">${T("Sesudah","After")}</th></tr></thead><tbody>${R.changes.map(c=>`<tr><td>${esc(T(...TL_LBL[c.k]))}</td><td>${tlFmt(c.k,c.from)}</td><td><b>${tlFmt(c.k,c.to)}</b></td></tr>`).join("")}</tbody></table></div>`:`<p class="mu" style="margin:0">${T("Tidak ada ambang yang perlu diubah: setelan sekarang sudah yang terbaik untuk data ini.","No threshold needed changing: the current settings are already best for this data.")}</p>`}<p class="mu" style="margin:8px 0 0;font-size:12.5px">${T(R.deleted+" log yang sudah dipakai dihapus.",R.deleted+" used logs deleted.")}</p></div>`;
+    // ambang aktif
+    h+=`<div class="sec"><h2>🎚️ ${T("Ambang aktif","Active thresholds")} <span class="pill">v${cfg.ver||0}${cfg.at?" · "+tlDate(cfg.at):""}</span></h2><div style="overflow-x:auto"><table style="width:100%;font-size:13.5px"><thead><tr><th align="left">${T("Ambang","Threshold")}</th><th align="left">${T("Bawaan","Default")}</th><th align="left">${T("Aktif","Active")}</th><th align="left">${T("Batas aman","Safe range")}</th></tr></thead><tbody>${Object.keys(PG_BOUNDS).map(k=>{const v=k in pg?pg[k]:PG_DEF[k],b=PG_BOUNDS[k];return `<tr><td>${esc(T(...TL_LBL[k]))}</td><td>${tlFmt(k,PG_DEF[k])}</td><td>${Math.abs(v-PG_DEF[k])>1e-9?"<b>"+tlFmt(k,v)+"</b>":tlFmt(k,v)}</td><td class="mu">${tlFmt(k,b[0])}–${tlFmt(k,b[1])}</td></tr>`}).join("")}</tbody></table></div></div>`;
+    // penyebab gagal & per jenis
+    const RJ={vis:T("Titik tubuh kurang jelas (buram/cepat/gelap)","Unclear body points (blur/fast/dark)"),small:T("Badan terlalu kecil","Body too small"),legs:T("Kaki tidak utuh","Legs not fully visible"),pose:T("Bentuk badan tidak wajar","Implausible body shape")};
+    h+=`<div class="sec"><h2>🔎 ${T("Penyebab frame ditolak","Why frames were rejected")}</h2>${S.fn?Object.keys(RJ).map(k=>`<div class="row" style="justify-content:space-between"><span>${RJ[k]}</span><b>${pct(S.rej[k],S.fn)}</b></div>`).join("")+`<div class="row" style="justify-content:space-between"><span>${T("Tidak ada orang terdeteksi","No person detected")}</span><b>${pct(S.fnone,S.fn)}</b></div><p class="mu" style="margin:8px 0 0;font-size:12.5px">${T("Persen dari "+S.fn+" frame yang dianalisa.","Percent of "+S.fn+" analyzed frames.")}</p>`:`<p class="mu" style="margin:0">${T("Belum ada data.","No data yet.")}</p>`}</div>`;
+    const bm=Object.entries(S.byMode);
+    if(bm.length)h+=`<div class="sec"><h2>📊 ${T("Per jenis analisa","By analysis type")}</h2>${bm.map(([k,o])=>`<div class="row" style="justify-content:space-between"><span>${esc(k)}</span><span><b>${o.f}</b> / ${o.n} ${T("gagal","failed")} (${pct(o.f,o.n)})</span></div>`).join("")}</div>`;
+    const top=Object.entries(S.errs).sort((a,b)=>b[1].n-a[1].n).slice(0,10);
+    h+=`<div class="sec"><h2>🐞 ${T("Error aplikasi","App errors")}</h2>${top.length?top.map(([m,o])=>`<div style="border-top:1px solid var(--ln);padding:8px 0"><b>${o.n}×</b> <span class="mu" style="font-size:12.5px">${o.clubs.size} ${T("klub","club(s)")} · ${T("menu","menu")} ${esc(o.view||"?")} · ${esc(o.src||"")} · ${tlDate(o.last)}</span><div style="font-family:ui-monospace,monospace;font-size:12.5px;overflow-wrap:anywhere">${esc(m)}</div></div>`).join("")+`<p class="mu" style="margin:8px 0 0;font-size:12.5px">${T("Error kode tidak bisa diperbaiki otomatis. Tekan “Salin ringkasan untuk Claude”, lalu tempel ke sesi Claude untuk diperbaiki.","Code errors can't be fixed automatically. Press “Copy summary for Claude” and paste it into a Claude session to get them fixed.")}</p>`:`<p class="mu" style="margin:0">${T("Tidak ada error tercatat. 🎉","No errors logged. 🎉")}</p>`}</div>`;
+    return h;
+  };
   const MP_MODEL="https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
 let _poseLm=null,_poseCPU=false;
 const _isIOS=()=>/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
@@ -2330,20 +2516,21 @@ async function poseAnalyze(file,mode,st,progress){
     if(!isFinite(dur)||dur<2)throw new Error(T("Video terlalu pendek atau rusak","Video too short or broken"));
     const n=poseN(dur);
     const sc=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
-    const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),pts=[],ts=[],vw=window.__anaView||"auto",dg=poseDiag();
+    const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),pts=[],ts=[],vw=window.__anaView||"auto",dg=poseDiag(),encs=[];
     for(let i=0;i<n;i++){
       const tt=dur*(0.02+0.96*i/(n-1));
       await new Promise(res=>{const tm=setTimeout(res,6000);v.onseeked=()=>{clearTimeout(tm);res()};v.currentTime=tt});
       ctx.drawImage(v,0,0,w,h);
       let r;try{r=lm.detect(cv)}catch(e){if(_poseCPU)throw e;_poseCPU=true;_poseLm=null;lm=await loadPose();r=lm.detect(cv)}
-      const L=r&&r.landmarks&&r.landmarks[0];poseDiagAdd(dg,L?[L]:[],w,h,{view:vw});
+      const L=r&&r.landmarks&&r.landmarks[0];poseDiagAdd(dg,L?[L]:[],w,h,{view:vw});encs.push(poseEnc(L));
       pts.push(L&&plausible(L,w,h,{view:vw})?L.map(p=>({x:p.x*w,y:p.y*h,v:p.visibility})):null);ts.push(tt);
       if(i%5===0)progress(T("Menganalisa gerakan ","Analyzing motion ")+Math.round(i/n*100)+"%");
     }
     // subjek baru sah setelah 8 frame berturut-turut lolos plausible(); frame sebelum itu tidak dipakai
     const cf=poseConfirmSeq(pts.map((p,i)=>({t:ts[i],p})),true);
-    try{return poseScore(cf.map(f=>f.p),mode,st,dur,null,ts)}
-    catch(e){if(e.lowValid!==undefined)e.message=poseDiagMsg(dg,e.lowValid);throw e}
+    const lg=(ok,e,valid)=>techLog("ana",{mode,src:"upload",multi:false,view:vw,dur:Math.round(dur*10)/10,n,w,h,dt:+(dur*0.96/(n-1)).toFixed(4),dg,subs:[{ok,err:tlErr(e),valid,fr:encs.slice(0,240)}]}).then(tlKeep);
+    try{const res=poseScore(cf.map(f=>f.p),mode,st,dur,null,ts);lg(true,null,res.data&&res.data.conf/100);return res}
+    catch(e){lg(false,e,e.lowValid);if(e.lowValid!==undefined)e.message=poseDiagMsg(dg,e.lowValid);throw e}
   }finally{URL.revokeObjectURL(url)}
 }
 // Pesan bila badan kurang terbaca: sebut penyebab utamanya supaya pelatih tahu harus memperbaiki apa.
@@ -2601,28 +2788,34 @@ function anaFrames(file,n){return new Promise((resolve,reject)=>{
       try{await v.play();v.pause()}catch(e){}
       const dur=v.duration;
       if(!isFinite(dur)||dur<2)throw new Error(T("Video terlalu pendek atau rusak","Video too short or broken"));
-      const raw=mode==="__raw",n=poseN(dur),vw=window.__anaView||"auto",dg=poseDiag(),ts=Array.from({length:n},(_,i)=>dur*(0.02+0.96*i/(n-1)));
+      const raw=mode==="__raw",n=poseN(dur),vw=window.__anaView||"auto",dg=poseDiag(),rawF=[],srcL=new WeakMap(),ts=Array.from({length:n},(_,i)=>dur*(0.02+0.96*i/(n-1)));
       const sc=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
       const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),dets=[];
       for(let i=0;i<n;i++){
         await new Promise(res=>{const tm=setTimeout(res,6000);v.onseeked=()=>{clearTimeout(tm);res()};v.currentTime=dur*(0.02+0.96*i/(n-1))});
         ctx.drawImage(v,0,0,w,h);
         let r;try{r=lm.detect(cv)}catch(e){if(_poseCPU)throw e;_poseCPU=true;_poseLm=null;lm=await loadPose();await setN();r=lm.detect(cv)}
-        poseDiagAdd(dg,(r&&r.landmarks)||[],w,h,{view:vw});
-        dets.push(((r&&r.landmarks)||[]).filter(L=>plausible(L,w,h,{view:vw})).map(L=>{const b=poseBox(L);return b?{b,pts:L.map(p=>({x:p.x*w,y:p.y*h,v:p.visibility}))}:null}).filter(Boolean));
+        poseDiagAdd(dg,(r&&r.landmarks)||[],w,h,{view:vw});rawF.push((r&&r.landmarks)||[]);
+        dets.push(((r&&r.landmarks)||[]).filter(L=>plausible(L,w,h,{view:vw})).map(L=>{const b=poseBox(L);if(!b)return null;const pts=L.map(p=>({x:p.x*w,y:p.y*h,v:p.visibility}));srcL.set(pts,L);return {b,pts}}).filter(Boolean));
         if(i%4===0)progress(T("Menganalisa gerakan ","Analyzing motion ")+Math.round(i/n*100)+"%");
       }
       // pelacakan: ikuti tiap orang yang diketuk dari titik pilihan ke depan dan ke belakang
       const iSel=Math.max(0,Math.min(n-1,Math.round(tr*(n-1))));
       const tracks=anaTrack(dets,people,iSel);
       // tiap orang baru sah setelah 8 frame berturut-turut lolos plausible(); hilang > 1.2 dtk = konfirmasi ulang
+      // log teknis per orang: titik yang terlacak; saat tidak terlacak, deteksi mentah terdekat dari posisi terakhirnya (untuk penyetelan)
+      tracks.forEach(t=>{let last=null;t.enc=t.pts.slice(0,240).map((p,i)=>{if(p){const L=srcL.get(p),b=L&&poseBox(L);if(b)last=b;return poseEnc(L)}
+        if(!last)return "";let best=null,bd=0.9;(rawF[i]||[]).forEach(L=>{const b=poseBox(L);if(!b)return;const dd=Math.hypot(b.cx-last.cx,b.cy-last.cy)/Math.max(last.h,0.15);if(dd<bd){bd=dd;best=L}});return poseEnc(best)})});
+      const tlog={mode,src:"upload",multi:true,view:vw,dur:Math.round(dur*10)/10,n,w,h,dt:+(dur*0.96/(n-1)).toFixed(4),dg};
       tracks.forEach(t=>{const seen=t.pts.filter(Boolean).length;t.pts=poseConfirmSeq(ts.map((tt,i)=>({t:tt,p:t.pts[i]})),true).map(f=>f.p);t.diag={dg,trk:{n,seen,ok:t.pts.filter(Boolean).length}}});
       // dua orang sering sangat berdekatan -> pelacakan bisa tertukar
       let close=0;
       if(tracks.length>1){for(let i=0;i<n;i++){const ps=dets[i];if(ps.length<2)continue;let c=false;for(let a=0;a<ps.length&&!c;a++)for(let b2=a+1;b2<ps.length;b2++){if(Math.hypot(ps[a].b.cx-ps[b2].b.cx,ps[a].b.cy-ps[b2].b.cy)/Math.max(ps[a].b.h,ps[b2].b.h,0.15)<0.5){c=true;break}}if(c)close++}}
       const swapRisk=close/n>0.25;
-      if(raw)return {tracks,dur,ts,warn:swapRisk};
-      return tracks.map(t=>{try{return{st:t.st,n:t.n,result:poseScore(t.pts,mode,t.st,dur,null,ts),warn:swapRisk}}catch(e){return{st:t.st,n:t.n,error:e.lowValid!==undefined?poseDiagMsg(t.diag.dg,e.lowValid,t.diag.trk):(e.message||String(e)),warn:swapRisk}}});
+      if(raw)return {tracks,dur,ts,warn:swapRisk,tlog};
+      const out=tracks.map(t=>{try{const result=poseScore(t.pts,mode,t.st,dur,null,ts);return{st:t.st,n:t.n,result,warn:swapRisk,_v:result.data&&result.data.conf/100}}catch(e){return{st:t.st,n:t.n,error:e.lowValid!==undefined?poseDiagMsg(t.diag.dg,e.lowValid,t.diag.trk):(e.message||String(e)),warn:swapRisk,_v:e.lowValid,_low:e.lowValid!==undefined}}});
+      techLog("ana",{...tlog,subs:out.slice(0,4).map((o,k)=>({ok:!o.error,err:o.error?(o._low?"low":String(o.error).slice(0,120)):"",valid:o._v,fr:tracks[k].enc}))}).then(tlKeep);
+      return out;
     }finally{URL.revokeObjectURL(url)}
   }
   const ANA_COL=["#C8102E","#1D3FA6","#1E7B4F","#B7791F","#6B2FA6","#0E8A8A"];
@@ -2762,18 +2955,18 @@ ${JSON.stringify(tel)}`;
       if(!isFinite(dur)||dur<2)throw new Error(T("Video terlalu pendek atau rusak","Video too short or broken"));
       const n=poseN(dur);
       const sc=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight)),w=Math.round(v.videoWidth*sc),h=Math.round(v.videoHeight*sc);
-      const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),fr=[],vw=window.__anaView||"auto",dg=poseDiag();
+      const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d"),fr=[],vw=window.__anaView||"auto",dg=poseDiag(),encs=[];
       for(let i=0;i<n;i++){
         const t=dur*(0.01+0.98*i/(n-1));
         await new Promise(res=>{const tm=setTimeout(res,6000);v.onseeked=()=>{clearTimeout(tm);res()};v.currentTime=t});
         ctx.drawImage(v,0,0,w,h);
         let r;try{r=lm.detect(cv)}catch(e){if(_poseCPU)throw e;_poseCPU=true;_poseLm=null;lm=await loadPose();r=lm.detect(cv)}
         const L=r&&r.landmarks&&r.landmarks[0];
-        poseDiagAdd(dg,L?[L]:[],w,h,{view:vw});
+        poseDiagAdd(dg,L?[L]:[],w,h,{view:vw});encs.push(poseEnc(L));
         fr.push({t,p:L&&plausible(L,w,h,{view:vw})?L.map(q=>({x:q.x*w,y:q.y*h,v:q.visibility})):null});
         if(i%5===0)progress(T("Mengukur gerakan ","Measuring motion ")+Math.round(i/n*100)+"%");
       }
-      return {fr:poseConfirmSeq(fr,true),dur,dg};
+      return {fr:poseConfirmSeq(fr,true),dur,dg,tlog:{mode:"poomsae",src:"upload",multi:false,view:vw,dur:Math.round(dur*10)/10,n,w,h,dt:+(dur*0.98/(n-1)).toFixed(4),dg,enc:encs.slice(0,240)}};
     }finally{URL.revokeObjectURL(url)}
   }
   function pmTelemetry(fr,dur,opt){
@@ -2978,12 +3171,13 @@ ${JSON.stringify(tel)}`;
     try{
       let c=pmState.cache&&pmState.cache.kind==="one"&&pmState.cache.file===anaState.file?pmState.cache:null;
       if(!c){
-        const {fr,dur,dg}=await pmExtract(anaState.file,m=>{pmState.msg=m;const bt=document.querySelector('[data-pm="go"]');if(bt)bt.textContent="⏳ "+m});
+        const {fr,dur,dg,tlog}=await pmExtract(anaState.file,m=>{pmState.msg=m;const bt=document.querySelector('[data-pm="go"]');if(bt)bt.textContent="⏳ "+m});
         pmState.msg=T("Membaca suara Kihap...","Reading Kihap sound...");draw();
-        c=pmState.cache={kind:"one",file:anaState.file,fr,dur,dg,audio:await pmAudio(anaState.file)};
+        c=pmState.cache={kind:"one",file:anaState.file,fr,dur,dg,tlog,fresh:true,audio:await pmAudio(anaState.file)};
       }
       pmState.repName=free?String(pmState.fname||"").trim():"";
-      pmState.rep=pmTelemetry(c.fr,c.dur,{...pmOpts(c.audio),diag:{dg:c.dg}});
+      const lg=(ok,e,valid)=>{if(!c.fresh||!c.tlog)return;c.fresh=false;const {enc,...rest}=c.tlog;techLog("ana",{...rest,subs:[{ok,err:tlErr(e),valid,fr:enc}]}).then(tlKeep)};
+      try{pmState.rep=pmTelemetry(c.fr,c.dur,{...pmOpts(c.audio),diag:{dg:c.dg}});lg(true,null,pmState.rep.tel.frame_terdeteksi_persen/100)}catch(e){lg(false,e,e.lowValid);throw e}
       if(!free)await pmAutoSave([{st,rep:pmState.rep}]);
     }catch(err){pmState.err=err.message||String(err)}
     pmState.busy=false;pmState.msg="";draw();uxScroll();
@@ -3000,15 +3194,16 @@ ${JSON.stringify(tel)}`;
       if(!c){
         const rw=await poseAnalyzeMulti(anaState.file,"__raw",people,anaState.prev.t,m=>{pmState.msg=m;const bt=document.querySelector('[data-pm="go"]');if(bt)bt.textContent="⏳ "+m});
         pmState.msg=T("Membaca suara Kihap...","Reading Kihap sound...");draw();
-        c=pmState.cache={kind:"multi",file:anaState.file,key,rw,audio:await pmAudio(anaState.file)};
+        c=pmState.cache={kind:"multi",file:anaState.file,key,rw,fresh:true,audio:await pmAudio(anaState.file)};
       }
       const rw=c.rw,frOf=t=>rw.ts.map((tt,i)=>({t:tt,p:t.pts[i]||null}));
       const first=rw.tracks.map(t=>{try{return pmTelemetry(frOf(t),rw.dur,pmOpts(null))}catch(e){return null}});
       const aud=pmAttribute(c.audio,first.map(r=>r?r.peaksT:[]));
       pmState.multi=rw.tracks.map((t,i)=>{
         try{return {st:t.st,n:t.n,warn:rw.warn,rep:pmTelemetry(frOf(t),rw.dur,{...pmOpts(aud[i]),diag:t.diag}),ai:"",aiBusy:false,aiErr:""}}
-        catch(err){return {st:t.st,n:t.n,warn:rw.warn,error:err.message||String(err)}}
+        catch(err){return {st:t.st,n:t.n,warn:rw.warn,error:err.message||String(err),_low:err.lowValid!==undefined,_v:err.lowValid}}
       });
+      if(c.fresh&&rw.tlog){c.fresh=false;techLog("ana",{...rw.tlog,mode:"poomsae",subs:pmState.multi.slice(0,4).map((x,k)=>({ok:!!x.rep,err:x.rep?"":(x._low?"low":String(x.error||"").slice(0,120)),valid:x.rep?x.rep.tel.frame_terdeteksi_persen/100:x._v,fr:(rw.tracks[k]&&rw.tracks[k].enc)||[]}))}).then(tlKeep)}
       if(!free)await pmAutoSave(pmState.multi.filter(x=>x.rep&&x.st&&x.st.id).map(x=>({st:x.st,rep:x.rep})));
     }catch(err){pmState.err=err.message||String(err)}
     pmState.busy=false;pmState.msg="";draw();uxScroll();
@@ -3123,7 +3318,7 @@ ${JSON.stringify(tel)}`;
     const busy=pmState.busy||anaState.busy,msg=pmState.busy?pmState.msg:anaState.msg,err=pmState.err||anaState.err;
     const h=UX_HELP[mode]||UX_HELP.umum,kat=pmState.kat||(!free&&st&&st.b)||"";
     const miss=live?[]:uxMissing();
-    const intro=`<div class="top"><div><h1>🎥 ${T("Analisa Video","Video Analysis")}</h1><span class="mu">${T("Video diproses di perangkat ini, tidak diunggah.","Video is processed on this device, not uploaded.")} · ${esc(unitLabel())}</span></div></div>`;
+    const intro=`<div class="top"><div><h1>🎥 ${T("Analisa Video","Video Analysis")}</h1><span class="mu">${T("Video diproses di perangkat ini, tidak diunggah. Data teknis anonim (angka titik tubuh, tanpa gambar/nama) dicatat untuk penyetelan otomatis.","Video is processed on this device, not uploaded. Anonymous technical data (body-point numbers, no images/names) is logged for auto-tuning.")} · ${esc(unitLabel())}</span></div></div>`;
     // 1. apa yang dianalisa
     const s1=`<div class="sec"><div class="ux-step"><i>1</i>${T("Apa yang dianalisa?","What to analyze?")}</div>
       <label class="ux-l">${T("JENIS","TYPE")}</label>${uxSeg("anaMode",[["poomsae","🥋 Poomsae"],["kyorugi","🥊 Kyorugi"],["umum","🏃 "+T("Latihan umum","General")]],mode)}
@@ -3159,7 +3354,8 @@ ${JSON.stringify(tel)}`;
     const go=live?"":`<div class="sec"><div class="ux-step"><i>${isP?5:4}</i>${T("Mulai analisa","Start")}</div>${chips}${chk}<button class="btn ux-go" data-pm="go" ${busy||miss.length?"disabled":""}>${busy?"⏳ "+esc(msg):"🎥 "+T("Analisa Sekarang","Analyze Now")}</button>${miss.length&&!busy?`<p class="mu" style="margin:8px 0 0;font-size:13px;text-align:center">${T("Belum bisa mulai: ","Can't start yet: ")}${esc(miss.join(", "))}</p>`:""}${busy&&anaState.busy?`<p style="margin:10px 0 0;text-align:center"><button class="btn ghost dn" data-a="anaCancel">${T("Batal","Cancel")}</button></p>`:""}${err?`<p style="margin:10px 0 0"><span class="pill warn">${esc(err)}</span></p>`:""}</div>`;
     const liveErr=live&&pmState.err?`<div class="sec"><span class="pill warn">${esc(pmState.err)}</span></div>`:"";
     const res=isP?pmResultsHtml():(free?fkHtml():origRes+anaMultiHtml());
-    return need()+intro+s1+s2+s3+s4+go+liveErr+`<div id="uxResults">${res}</div>`;
+    const ghost=res&&anaState.lastLogId&&anaState.ghostSent!==anaState.lastLogId?`<p class="mu" style="margin:-4px 0 16px;font-size:13px;text-align:center">👻 ${T("Hasil aneh, atau ada kerangka di benda (botol, kursi, bayangan)?","Odd result, or a skeleton on an object (bottle, chair, shadow)?")} <button class="btn ghost" data-tl="ghost" style="padding:4px 12px;font-size:13px">${T("Laporkan","Report")}</button></p>`:"";
+    return need()+intro+s1+s2+s3+s4+go+liveErr+`<div id="uxResults">${res}</div>`+ghost;
   };
   // ===== PENILAIAN LIVE: kamera (landscape), beberapa orang, mikrofon untuk Kihap =====
   Object.assign(pmState,{source:"upload",view:"auto"});
@@ -3343,6 +3539,7 @@ ${JSON.stringify(tel)}`;
       const mode=anaState.mode;
       const out=picks.map(p=>{const st=stubOf(p);try{return {st,n:p.id,result:poseScore(p.tr.fr.map(f=>f.p),mode,st,dur,pmState.view,p.tr.fr.map(f=>f.t))}}catch(err){return {st,n:p.id,error:err.message||String(err)}}});
       liveOff();
+      techLog("ana",{mode,src:"live",multi:out.length>1,view:pmState.view,dur:Math.round(dur*10)/10,subs:out.slice(0,4).map(o=>({ok:!o.error,err:o.error?String(o.error).slice(0,120):""}))}).then(tlKeep);
       if(pmState.free)pmState.fk=out.map(o=>({name:o.st._n,result:o.result,error:o.error}));
       else{try{await anaSaveOut(out.filter(o=>o.st&&o.st.id),mode)}catch(err){anaState.err=err.message||String(err)}if(anaState.err){pmState.err=anaState.err;anaState.err=""}}
       draw();uxScroll();return;
@@ -3351,6 +3548,7 @@ ${JSON.stringify(tel)}`;
     const audio=!L.hasMic?null:(!L.bursts.length&&L.mic.peak<0.005?{silent:true,bursts:[]}:{silent:false,bursts:L.bursts});
     const aud=pmAttribute(audio,first);
     pmState.multi=picks.map((p,i)=>{const st=stubOf(p);try{return {st,n:p.id,rep:pmTelemetry(p.tr.fr,dur,pmOpts(aud[i])),ai:"",aiBusy:false,aiErr:""}}catch(err){return {st,n:p.id,error:err.message||String(err)}}});
+    techLog("ana",{mode:"poomsae",src:"live",multi:picks.length>1,view:pmState.view,dur:Math.round(dur*10)/10,subs:pmState.multi.slice(0,4).map(x=>({ok:!!x.rep,err:x.rep?"":String(x.error||"").slice(0,120)}))}).then(tlKeep);
     liveOff();
     if(!pmState.free)await pmAutoSave(pmState.multi.filter(x=>x.rep&&x.st&&x.st.id).map(x=>({st:x.st,rep:x.rep})));
     draw();uxScroll();
@@ -3608,5 +3806,5 @@ ${JSON.stringify(tel)}`;
   window.addEventListener("online",function(){if(typeof toast==="function")toast(tx("Kembali online","Back online"))});
 })();
 </script><script>document.addEventListener("click",function(e){if(e.target.closest&&e.target.closest("[data-champ]"))location.href="/champion?pelatih=1"});</script><style>#appVer{position:fixed;left:6px;bottom:2px;z-index:2147483000;font:700 9px/1 system-ui,-apple-system,sans-serif;letter-spacing:.3px;color:#fff;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.3);padding:2px 5px;border-radius:999px;pointer-events:none;user-select:none}</style>
-<style>@media (max-width:760px){body:not(.standalone-portal) #appVer{bottom:calc(72px + env(safe-area-inset-bottom,0px))}}</style><div id="appVer" aria-hidden="true">v6</div>
+<style>@media (max-width:760px){body:not(.standalone-portal) #appVer{bottom:calc(72px + env(safe-area-inset-bottom,0px))}}</style><div id="appVer" aria-hidden="true">v7</div>
 </body></html>
