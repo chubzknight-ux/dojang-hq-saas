@@ -173,3 +173,11 @@ test("video unggahan: 8 frame yang mengesahkan subjek ikut dipakai (retro); kame
   const short = []; for (let i = 0; i < 7; i++) short.push({ t: i * 0.125, p: {} }); // tidak pernah sah
   assert.equal(poseConfirmSeq(short, true).filter(f => f.p).length, 0);
 });
+
+test("konfirmasi kamera live di HP lambat: jeda yang lebih panjang boleh diberikan pemanggil", () => {
+  const slow = poseConfirmer(), strict = poseConfirmer();
+  const outS = [], outD = [];
+  for (let i = 0; i < 9; i++) { outS.push(slow.step(i * 0.9, true, 2.25, 2.7)); outD.push(strict.step(i * 0.9, true)); }
+  assert.deepEqual(outS, [false, false, false, false, false, false, false, true, true]); // 1.1 frame/dtk tetap bisa sah
+  assert.equal(outD.some(Boolean), false); // dengan jeda 0.5 dtk tidak pernah sah
+});
