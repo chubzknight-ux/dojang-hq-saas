@@ -13,8 +13,8 @@ const m = html.match(/\/\/ ==POSE-GUARD-START==[\s\S]*?\/\/ ==POSE-GUARD-END==/)
 assert.ok(m, "blok POSE-GUARD tidak ditemukan di index.html");
 const ctx = {};
 vm.createContext(ctx);
-vm.runInContext(m[0] + "\nthis.G={plausible,poseConfirmer,poseConfirmSeq,kinPt,poseN,PG,KIN};", ctx);
-const { plausible, poseConfirmer, poseConfirmSeq, kinPt, poseN } = ctx.G;
+vm.runInContext(m[0] + "\nthis.G={plausible,plausibleWhy,poseConfirmer,poseConfirmSeq,poseDiag,poseDiagAdd,kinPt,poseN,PG,KIN};", ctx);
+const { plausible, plausibleWhy, poseConfirmer, poseConfirmSeq, poseDiag, poseDiagAdd, kinPt, poseN } = ctx.G;
 
 const W = 480, H = 640; // frame portrait (piksel)
 
@@ -145,4 +145,31 @@ test("sampling video: jeda antar frame selalu < 500 ms (video 5 menit pun)", () 
     assert.ok(dur * 0.98 / (n - 1) < 0.5, `dur ${dur}: n ${n}`);
   }
   assert.equal(poseN(10), 80); // video pendek tidak berubah dari sebelumnya (8 frame/dtk)
+});
+
+// --- penyebab ditolak (dipakai untuk pesan "kenapa gagal terbaca")
+test("penyebab ditolak: buram/visibility rendah, terlalu kecil, kaki tidak utuh, posisi tidak wajar", () => {
+  assert.equal(plausibleWhy(standing(), W, H, { view: "auto" }), "");
+  assert.equal(plausibleWhy(standing(0.4), W, H, { view: "auto" }), "vis");
+  assert.equal(plausibleWhy(transform(standing(), p => ({ x: 0.5 + (p.x - 0.5) * 0.15, y: 0.5 + (p.y - 0.5) * 0.15 })), W, H, { view: "auto" }), "small");
+  const noLegs = standing(); [25, 26, 27, 28].forEach(i => { noLegs[i] = { ...noLegs[i], visibility: 0.45 }; });
+  assert.equal(plausibleWhy(noLegs, W, H, { view: "auto" }), "legs");
+  assert.equal(plausibleWhy(transform(standing(), p => ({ y: 1 - p.y })), W, H, { view: "auto" }), "pose");
+});
+
+test("catatan per video: menghitung frame terbaca dan penyebab utama penolakan", () => {
+  const dg = poseDiag();
+  poseDiagAdd(dg, [standing()], W, H, { view: "auto" });
+  poseDiagAdd(dg, [], W, H, { view: "auto" });
+  poseDiagAdd(dg, [standing(0.4)], W, H, { view: "auto" });
+  poseDiagAdd(dg, [standing(0.4), standing()], W, H, { view: "auto" }); // satu orang lolos = frame terbaca
+  assert.deepEqual(JSON.parse(JSON.stringify(dg)), { n: 4, none: 1, ok: 2, rej: { vis: 1, small: 0, legs: 0, pose: 0 } });
+});
+
+test("video unggahan: 8 frame yang mengesahkan subjek ikut dipakai (retro); kamera live tidak", () => {
+  const fr = []; for (let i = 0; i < 10; i++) fr.push({ t: i * 0.125, p: {} });
+  assert.equal(poseConfirmSeq(fr).filter(f => f.p).length, 3);
+  assert.equal(poseConfirmSeq(fr, true).filter(f => f.p).length, 10);
+  const short = []; for (let i = 0; i < 7; i++) short.push({ t: i * 0.125, p: {} }); // tidak pernah sah
+  assert.equal(poseConfirmSeq(short, true).filter(f => f.p).length, 0);
 });

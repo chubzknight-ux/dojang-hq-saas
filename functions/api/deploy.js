@@ -37,7 +37,8 @@ export async function onRequestPost({ env, request }) {
   }
 
   const token = body.token.trim();
-  const mode = body.mode === "pr" ? "pr" : "direct";
+  // Selalu lewat Pull Request: kode yang ditempel bisa berasal dari salinan lama dan menghapus perubahan terbaru di main.
+  const mode = "pr";
   const title = (body.title || "Update fitur Dojang HQ SaaS").trim();
 
   try {
