@@ -14,7 +14,7 @@ const env = variant === "hq"
   ? { DB, DOJANG_PIN: "demo-pin-2026", ANALYZE_PIN: "demo-pin-2026", TOKEN_SECRET: "demo-secret-panjang-1234567890" }
   : { DB, TOKEN_SECRET: "demo-secret-panjang-1234567890", SUPERADMIN_PIN: "demo-super-2026" };
 if (variant === "saas") {
-  sq.prepare("INSERT INTO docs VALUES('clubs','garuda',?)").run(JSON.stringify({ name: "Garuda Taekwondo Club", headCoach: "Sabeum Andi", adminUser: "garuda", adminPin: "demo1234", plan: "Basic", expiresAt: "2027-06-30" }));
+  sq.prepare("INSERT INTO docs VALUES('clubs','garuda',?)").run(JSON.stringify({ name: "Garuda Taekwondo Club", headCoach: "Sabeum Andi", adminUser: "garuda", adminPin: "demo1234", plan: "Pro", expiresAt: "2027-06-30" }));
   sq.prepare("INSERT INTO docs VALUES('clubs','macan',?)").run(JSON.stringify({ name: "Macan Putih Dojang", headCoach: "Sabeum Rudi", adminUser: "macan", adminPin: "demo5678", plan: "Pro", expiresAt: "2026-11-10" }));
 }
 const api = path.join(repo, "functions/api");

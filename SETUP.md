@@ -9,6 +9,8 @@ Satu aplikasi untuk banyak dojang. Data tiap klub terpisah, dan setiap klub puny
 ## 2. Deploy ke Pages
 Hubungkan repo ini ke Cloudflare Pages (Workers & Pages → Create → Pages → Connect to Git). Tanpa build command, output directory `/`. Folder `functions/` otomatis menjadi API.
 
+> **Sudah pernah deploy sebelumnya?** Buka D1 → Console, tempel bagian `audit_log` di akhir `schema.sql` lalu Execute (aman diulang). Aplikasi tetap membuat tabel itu sendiri bila belum ada, jadi langkah ini opsional.
+
 ## 3. Hubungkan D1
 Project → Settings → Bindings → Add → D1 database
 - Variable name: `DB`
@@ -23,6 +25,7 @@ Opsional (fitur Analisa Video AI):
 - Binding Workers AI dengan nama `AI`, atau
 - `GEMINI_API_KEY`, atau `ANTHROPIC_API_KEY`
 - `ANALYZE_DAILY_LIMIT` — batas analisa per klub per hari (bawaan 30)
+- `DISABLE_LEGACY_AUTH` — isi `1` untuk mematikan jalur login lama (header `X-Dojang-Pin` di setiap permintaan). Isi **setelah** semua HP admin sudah memakai versi aplikasi terbaru (buka aplikasi sekali sampai masuk lagi). Bila diisi, HP yang masih memakai versi lama diminta masuk ulang. Kosongkan untuk membatalkan.
 
 Setelah mengubah variabel, deploy ulang.
 
@@ -50,6 +53,9 @@ Setelah mengubah variabel, deploy ulang.
 - Setelah masuk, aplikasi memakai token bertanda tangan (admin klub 7 hari, Super Admin 12 jam). PIN tidak disimpan di HP dan tidak dikirim di tiap permintaan. Mengganti PIN (atau `SUPERADMIN_PIN`) otomatis mengeluarkan sesi lama.
 - PIN tidak pernah dikirim balik ke aplikasi. Saat Super Admin mengubah data klub, kolom PIN yang dikosongkan berarti PIN tidak diganti.
 - Ulasan orang tua untuk pelatih ditampilkan secara publik tanpa nama orang tua dan murid.
+- **Isolasi antar klub** dijaga di server dan diuji otomatis (lihat bagian "Menjalankan test"): klub tidak bisa membaca, menimpa, atau menghapus data klub lain, walau mengirim `clubId` palsu atau menyimpan id yang sama bersamaan. Penulisan data dikunci per klub oleh database itu sendiri.
+- Pembatas percobaan (login admin 10x / 15 menit / IP, login pelatih, portal, ulasan, pembayaran) dihitung **atomik**, jadi ratusan permintaan paralel tidak bisa lolos bersamaan.
+- Daftar nama klub tidak ditampilkan ke publik. Orang tua dan pelatih harus memakai tautan dengan kode klub.
 - Header keamanan di `_headers`: Content-Security-Policy (hanya sumber yang dikenal: situs sendiri, Google Fonts, dan model pose MediaPipe), HSTS, anti-iframe, `nosniff`, kebijakan kamera hanya untuk situs sendiri.
 - Koleksi internal (`staff`, `clubs`, `invoices`, `billing_settings`, `ai_usage`, Champion) tidak bisa diubah lewat API data umum. Kuota harian Analisa Video tidak bisa direset oleh admin klub.
 - Unggahan data lewat API dibatasi 2 MB. Data dari pengguna selalu di-escape sebelum tampil.
@@ -93,8 +99,34 @@ Payment gateway sengaja belum dipasang. Alurnya:
 
 Data: koleksi `invoices` (tagihan) dan `billing_settings` (pengaturan) tidak ikut sinkron data klub dan tidak bisa diubah lewat API umum. Konfirmasi dua kali tidak memperpanjang dua kali.
 
+## 🧪 Menjalankan test
+Test memakai API asli dengan database SQLite di memori (tanpa Cloudflare, tanpa internet). Butuh Node 22.5+.
+
+```bash
+node --test                                   # semua test (±60 test, kurang dari 2 detik)
+node --test tests/tenant-isolation.test.js    # hanya test isolasi antar klub
+```
+
+Yang diuji `tenant-isolation.test.js`: klub A tidak bisa melihat/menimpa/mengubah/menghapus data klub B; `clubId` palsu di body diabaikan; dua klub menyimpan id murid yang sama bersamaan (hanya satu menang); koleksi internal tidak bisa ditulis lewat API umum; endpoint Super Admin menolak admin klub; daftar klub tidak bocor; 30 percobaan login paralel hanya 10 yang diproses; token batal bila PIN diganti; klub kedaluwarsa ditolak; dan `DISABLE_LEGACY_AUTH`.
+
+Tambahkan test setiap kali membuat endpoint baru. Pola dasarnya ada di `tests/_harness.js` (`world()` membuat dua klub contoh `garuda` dan `macan`, `login()` mengambil token, `call()` memanggil endpoint).
+
 ## 📖 Panduan video
-Video cara memakai fitur ada di folder `panduan/` dan bisa dibuka tanpa login di `/?panduan=1` (juga lewat menu **📖 Panduan** untuk admin klub dan Super Admin, tautan di layar masuk, dan tombol di Portal Orang Tua serta Champion). Video direkam otomatis dari aplikasi asli dengan data contoh memakai skrip di folder `tools-panduan/` (lihat `tools-panduan/README.md`); rekam ulang bila tampilan aplikasi berubah.
+Video cara memakai fitur ada di folder `panduan/` (11 video, bahasa Indonesia) dan bisa dibuka tanpa login di `/?panduan=1` (juga lewat menu **📖 Panduan** untuk admin klub dan Super Admin, tautan di layar masuk, dan tombol di Portal Orang Tua serta Champion). Video direkam otomatis dari aplikasi asli dengan data contoh memakai skrip di folder `tools-panduan/` (lihat `tools-panduan/README.md`); rekam ulang bila tampilan aplikasi berubah.
+
+| Berkas | Isi |
+|---|---|
+| 01 | Masuk & Dashboard |
+| 02 | Murid & Absensi |
+| 09 | Penilaian & Laporan murid |
+| 03 | Iuran, Pengumuman & Ringkasan bulanan |
+| 10 | Unit sekolah, kelas murid & Naik kelas |
+| 11 | Latihan TC |
+| 06 | Akun Pelatih |
+| 05 | Champion (PR latihan di rumah) |
+| 04 | Portal Orang Tua |
+| 08 | Perpanjang langganan |
+| 07 | Super Admin: klien & pembayaran |
 
 ## 🧠 Log teknis & penyetelan otomatis (Analisa Video)
 - Tiap analisa video mengirim log anonim ke `/api/techlog`: angka titik tubuh (13 titik, tanpa gambar, nama, atau ID murid), penyebab frame ditolak, dan hasil analisa. Error aplikasi (maks. 5 per sesi) juga dicatat. Kamera live hanya mengirim ringkasan.
